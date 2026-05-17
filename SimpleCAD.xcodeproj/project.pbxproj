@@ -1,0 +1,391 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		AA000000000000000000001 /* SimpleCADApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000001 /* SimpleCADApp.swift */; };
+		AA000000000000000000002 /* CADColor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000002 /* CADColor.swift */; };
+		AA000000000000000000003 /* CADShape.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000003 /* CADShape.swift */; };
+		AA000000000000000000004 /* CADDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000004 /* CADDocument.swift */; };
+		AA000000000000000000005 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000005 /* ContentView.swift */; };
+		AA000000000000000000006 /* CanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000006 /* CanvasView.swift */; };
+		AA000000000000000000007 /* CanvasViewRepresentable.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000007 /* CanvasViewRepresentable.swift */; };
+		AA000000000000000000008 /* ShapeListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000008 /* ShapeListView.swift */; };
+		AA000000000000000000009 /* ToolbarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000009 /* ToolbarView.swift */; };
+		AA000000000000000000010 /* StatusBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000010 /* StatusBarView.swift */; };
+		AA000000000000000000011 /* SVGService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000011 /* SVGService.swift */; };
+		AA000000000000000000013 /* HistoryPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000014 /* HistoryPanelView.swift */; };
+		AA000000000000000000012 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000012 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		AA100000000000000000000 /* SimpleCAD.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SimpleCAD.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA100000000000000000001 /* SimpleCADApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimpleCADApp.swift; sourceTree = "<group>"; };
+		AA100000000000000000002 /* CADColor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CADColor.swift; sourceTree = "<group>"; };
+		AA100000000000000000003 /* CADShape.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CADShape.swift; sourceTree = "<group>"; };
+		AA100000000000000000004 /* CADDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CADDocument.swift; sourceTree = "<group>"; };
+		AA100000000000000000005 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		AA100000000000000000006 /* CanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasView.swift; sourceTree = "<group>"; };
+		AA100000000000000000007 /* CanvasViewRepresentable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasViewRepresentable.swift; sourceTree = "<group>"; };
+		AA100000000000000000008 /* ShapeListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShapeListView.swift; sourceTree = "<group>"; };
+		AA100000000000000000009 /* ToolbarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolbarView.swift; sourceTree = "<group>"; };
+		AA100000000000000000010 /* StatusBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarView.swift; sourceTree = "<group>"; };
+		AA100000000000000000011 /* SVGService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SVGService.swift; sourceTree = "<group>"; };
+		AA100000000000000000012 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		AA100000000000000000013 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AA100000000000000000014 /* HistoryPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryPanelView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		AA200000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		AA300000000000000000001 /* SimpleCAD */ = {
+			isa = PBXGroup;
+			children = (
+				AA100000000000000000001 /* SimpleCADApp.swift */,
+				AA300000000000000000002 /* Models */,
+				AA300000000000000000003 /* Views */,
+				AA300000000000000000004 /* Services */,
+				AA100000000000000000012 /* Assets.xcassets */,
+				AA100000000000000000013 /* Info.plist */,
+			);
+			path = SimpleCAD;
+			sourceTree = "<group>";
+		};
+		AA300000000000000000002 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				AA100000000000000000002 /* CADColor.swift */,
+				AA100000000000000000003 /* CADShape.swift */,
+				AA100000000000000000004 /* CADDocument.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		AA300000000000000000003 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				AA100000000000000000005 /* ContentView.swift */,
+				AA100000000000000000006 /* CanvasView.swift */,
+				AA100000000000000000007 /* CanvasViewRepresentable.swift */,
+				AA100000000000000000008 /* ShapeListView.swift */,
+				AA100000000000000000009 /* ToolbarView.swift */,
+				AA100000000000000000010 /* StatusBarView.swift */,
+				AA100000000000000000014 /* HistoryPanelView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		AA300000000000000000004 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				AA100000000000000000011 /* SVGService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		AA300000000000000000005 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AA100000000000000000000 /* SimpleCAD.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		AA300000000000000000000 = {
+			isa = PBXGroup;
+			children = (
+				AA300000000000000000001 /* SimpleCAD */,
+				AA300000000000000000005 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		AA400000000000000000001 /* SimpleCAD */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA500000000000000000002 /* Build configuration list for PBXNativeTarget "SimpleCAD" */;
+			buildPhases = (
+				AA200000000000000000002 /* Sources */,
+				AA200000000000000000001 /* Frameworks */,
+				AA200000000000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SimpleCAD;
+			productName = SimpleCAD;
+			productReference = AA100000000000000000000 /* SimpleCAD.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AA400000000000000000000 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					AA400000000000000000001 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = AA500000000000000000001 /* Build configuration list for PBXProject "SimpleCAD" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = fr;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				fr,
+				Base,
+			);
+			mainGroup = AA300000000000000000000;
+			productRefGroup = AA300000000000000000005 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				AA400000000000000000001 /* SimpleCAD */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AA200000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA000000000000000000012 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AA200000000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA000000000000000000001 /* SimpleCADApp.swift in Sources */,
+				AA000000000000000000002 /* CADColor.swift in Sources */,
+				AA000000000000000000003 /* CADShape.swift in Sources */,
+				AA000000000000000000004 /* CADDocument.swift in Sources */,
+				AA000000000000000000005 /* ContentView.swift in Sources */,
+				AA000000000000000000006 /* CanvasView.swift in Sources */,
+				AA000000000000000000007 /* CanvasViewRepresentable.swift in Sources */,
+				AA000000000000000000008 /* ShapeListView.swift in Sources */,
+				AA000000000000000000009 /* ToolbarView.swift in Sources */,
+				AA000000000000000000010 /* StatusBarView.swift in Sources */,
+				AA000000000000000000011 /* SVGService.swift in Sources */,
+				AA000000000000000000013 /* HistoryPanelView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		AA500000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		AA500000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+		AA500000000000000000005 /* Debug - Target */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SimpleCAD/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.simplecad.SimpleCAD;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		AA500000000000000000006 /* Release - Target */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SimpleCAD/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.simplecad.SimpleCAD;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		AA500000000000000000001 /* Build configuration list for PBXProject "SimpleCAD" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA500000000000000000003 /* Debug */,
+				AA500000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA500000000000000000002 /* Build configuration list for PBXNativeTarget "SimpleCAD" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA500000000000000000005 /* Debug - Target */,
+				AA500000000000000000006 /* Release - Target */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+	};
+	rootObject = AA400000000000000000000 /* Project object */;
+}

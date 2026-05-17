@@ -1,0 +1,562 @@
+import AppKit
+
+// MARK: - CADCanvasView
+
+final class CADCanvasView: NSView {
+
+    // Injected by representable
+    var document: CADDocument! {
+        didSet { needsDisplay = true }
+    }
+
+    // MARK: - Drawing state
+
+    private var isDrawing   = false
+    private var drawStart   = CGPoint.zero
+    private var currentRect = CGRect.zero
+
+    // MARK: - Selection drag state
+
+    private var isDragging  = false
+    private var lastDragPt  = CGPoint.zero
+
+    // MARK: - Pan state (espace + glisser)
+
+    private var isSpaceDown  = false
+    private var isPanning    = false
+    private var panLastWinPt = CGPoint.zero   // en coordonnées fenêtre
+    private var eventMonitor: Any?
+
+    // MARK: - Dimension label hit areas (updated each draw)
+    // keyed by shape.id: the clickable CGRect in view coordinates
+
+    private var widthHitRects:  [UUID: CGRect] = [:]
+    private var heightHitRects: [UUID: CGRect] = [:]
+
+    // MARK: - Inline dimension editor
+
+    private var dimensionEditor: NSTextField?
+    private var editingShapeID:  UUID?
+    private enum DimAxis { case width, height }
+    private var editingAxis: DimAxis?
+
+    // MARK: - Constants
+
+    private let gridSpacing: CGFloat = 20
+    private let handleSize:  CGFloat = 7
+    private let dimOffset:   CGFloat = 28  // px from shape edge to dim line
+    private let dimExtend:   CGFloat = 6   // extension line overshoot
+
+    // MARK: - Flipped (Y grows downward, same as SVG)
+
+    override var isFlipped: Bool { true }
+
+    // MARK: - Lifecycle (monitor espace global)
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil {
+            // Surveille espace même sans focus clavier, mais sans consommer l'event
+            // pour ne pas gêner les champs de saisie.
+            eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+                guard let self, event.keyCode == 49 else { return event }
+                // Ne pas interférer avec les champs de texte
+                let fr = self.window?.firstResponder
+                if fr is NSTextView || fr is NSTextField { return event }
+                let down = (event.type == .keyDown)
+                if down != self.isSpaceDown {
+                    self.isSpaceDown = down
+                    if !down { self.isPanning = false }
+                    self.window?.resetCursorRects()
+                }
+                // Retourner nil pour absorber l'espace (évite un bip ou une action parasite)
+                return nil
+            }
+        } else {
+            if let m = eventMonitor { NSEvent.removeMonitor(m); eventMonitor = nil }
+            isSpaceDown = false; isPanning = false
+        }
+    }
+
+    // MARK: - draw(_:)
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+
+        NSColor.white.setFill()
+        bounds.fill()
+
+        if document.showGrid { drawGrid(ctx: ctx) }
+
+        for shape in document.shapes { drawShape(shape, ctx: ctx) }
+
+        if isDrawing, document.currentTool != .select { drawPreview(ctx: ctx) }
+
+        // Reset hit rects each frame
+        widthHitRects.removeAll()
+        heightHitRects.removeAll()
+
+        for shape in document.shapes where document.selectedIDs.contains(shape.id) {
+            drawSelectionBorder(shape, ctx: ctx)
+            if document.showDimensions { drawDimensions(shape, ctx: ctx) }
+            drawHandles(shape, ctx: ctx)
+        }
+    }
+
+    // MARK: - Grid
+
+    private func drawGrid(ctx: CGContext) {
+        ctx.saveGState()
+        ctx.setStrokeColor(NSColor(white: 0.87, alpha: 1).cgColor)
+        ctx.setLineWidth(0.5)
+        var x: CGFloat = 0
+        while x <= bounds.width  { ctx.move(to: CGPoint(x: x, y: 0)); ctx.addLine(to: CGPoint(x: x, y: bounds.height)); x += gridSpacing }
+        var y: CGFloat = 0
+        while y <= bounds.height { ctx.move(to: CGPoint(x: 0, y: y)); ctx.addLine(to: CGPoint(x: bounds.width, y: y));  y += gridSpacing }
+        ctx.strokePath()
+        ctx.restoreGState()
+    }
+
+    // MARK: - Draw shape
+
+    private func drawShape(_ shape: CADShape, ctx: CGContext) {
+        let path = shape.bezierPath()
+        if shape.fillColor.alpha > 0   { shape.fillColor.nsColor.setFill();   path.fill() }
+        if shape.strokeColor.alpha > 0, shape.strokeWidth > 0 {
+            shape.strokeColor.nsColor.setStroke()
+            path.lineWidth = CGFloat(shape.strokeWidth)
+            path.stroke()
+        }
+    }
+
+    // MARK: - Drawing preview
+
+    private func drawPreview(ctx: CGContext) {
+        guard let shapeType = document.currentTool.shapeType else { return }
+        let preview = CADShape(type: shapeType, bounds: currentRect, name: "",
+                               fillColor: document.fillColor.withAlpha(0.35),
+                               strokeColor: document.strokeColor,
+                               strokeWidth: document.strokeWidth)
+        drawShape(preview, ctx: ctx)
+    }
+
+    // MARK: - Selection border
+
+    private func drawSelectionBorder(_ shape: CADShape, ctx: CGContext) {
+        ctx.saveGState()
+        let path = shape.bezierPath(); path.lineWidth = 1.5
+        let dash: [CGFloat] = [5, 3]; path.setLineDash(dash, count: 2, phase: 0)
+        NSColor.systemBlue.setStroke(); path.stroke()
+        ctx.restoreGState()
+    }
+
+    // MARK: - Resize handles
+
+    private func drawHandles(_ shape: CADShape, ctx: CGContext) {
+        let b = shape.bounds
+        let pts: [CGPoint] = [
+            CGPoint(x: b.minX, y: b.minY), CGPoint(x: b.midX, y: b.minY),
+            CGPoint(x: b.maxX, y: b.minY), CGPoint(x: b.maxX, y: b.midY),
+            CGPoint(x: b.maxX, y: b.maxY), CGPoint(x: b.midX, y: b.maxY),
+            CGPoint(x: b.minX, y: b.maxY), CGPoint(x: b.minX, y: b.midY),
+        ]
+        for pt in pts {
+            let r = CGRect(x: pt.x - handleSize/2, y: pt.y - handleSize/2,
+                           width: handleSize, height: handleSize)
+            NSColor.white.setFill(); NSBezierPath(rect: r).fill()
+            let bp = NSBezierPath(rect: r); bp.lineWidth = 1.5
+            NSColor.systemBlue.setStroke(); bp.stroke()
+        }
+    }
+
+    // MARK: - Dimension annotations
+
+    private func drawDimensions(_ shape: CADShape, ctx: CGContext) {
+        let b = shape.bounds
+        guard b.width > 4, b.height > 4 else { return }
+
+        ctx.saveGState()
+        let color = NSColor.systemBlue.withAlphaComponent(0.85)
+        color.setStroke(); color.setFill(); ctx.setLineWidth(1.0)
+
+        // ── Width (horizontal, below shape) ──────────────────
+        let yDim = b.maxY + dimOffset
+        strokeLine(ctx, CGPoint(x: b.minX, y: yDim),   CGPoint(x: b.maxX, y: yDim))
+        strokeLine(ctx, CGPoint(x: b.minX, y: b.maxY), CGPoint(x: b.minX, y: yDim + dimExtend))
+        strokeLine(ctx, CGPoint(x: b.maxX, y: b.maxY), CGPoint(x: b.maxX, y: yDim + dimExtend))
+        drawArrow(ctx, at: CGPoint(x: b.minX, y: yDim), dir: .right)
+        drawArrow(ctx, at: CGPoint(x: b.maxX, y: yDim), dir: .left)
+
+        let wLabel = document.unit.format(Double(b.width))
+        let wLabelCenter = CGPoint(x: b.midX, y: yDim + 5)
+        let wHit = labelHitRect(center: wLabelCenter, text: wLabel, margin: 6)
+        drawLabelBackground(wHit, highlighted: editingShapeID == shape.id && editingAxis == .width)
+        drawLabel(wLabel, at: wLabelCenter, color: color, underline: true)
+        widthHitRects[shape.id] = wHit
+
+        // ── Height (vertical, right of shape) ─────────────────
+        let xDim = b.maxX + dimOffset
+        strokeLine(ctx, CGPoint(x: xDim, y: b.minY),   CGPoint(x: xDim, y: b.maxY))
+        strokeLine(ctx, CGPoint(x: b.maxX, y: b.minY), CGPoint(x: xDim + dimExtend, y: b.minY))
+        strokeLine(ctx, CGPoint(x: b.maxX, y: b.maxY), CGPoint(x: xDim + dimExtend, y: b.maxY))
+        drawArrow(ctx, at: CGPoint(x: xDim, y: b.minY), dir: .down)
+        drawArrow(ctx, at: CGPoint(x: xDim, y: b.maxY), dir: .up)
+
+        let hLabel = document.unit.format(Double(b.height))
+        let hLabelCenter = CGPoint(x: xDim + 18, y: b.midY)
+        let hHit = labelHitRectVertical(center: hLabelCenter, text: hLabel, margin: 6)
+        drawLabelBackground(hHit, highlighted: editingShapeID == shape.id && editingAxis == .height)
+        drawLabelVertical(hLabel, at: hLabelCenter, color: color, underline: true)
+        heightHitRects[shape.id] = hHit
+
+        ctx.restoreGState()
+    }
+
+    private func labelHitRect(center: CGPoint, text: String, margin: CGFloat) -> CGRect {
+        let attrs: [NSAttributedString.Key: Any] = [.font: labelFont()]
+        let sz = (text as NSString).size(withAttributes: attrs)
+        return CGRect(x: center.x - sz.width/2 - margin,
+                      y: center.y - sz.height/2 - margin,
+                      width: sz.width + margin*2,
+                      height: sz.height + margin*2)
+    }
+
+    /// Même chose, mais pour un texte dessiné tourné à -90° :
+    /// la largeur visuelle = hauteur naturelle du texte, et inversement.
+    private func labelHitRectVertical(center: CGPoint, text: String, margin: CGFloat) -> CGRect {
+        let attrs: [NSAttributedString.Key: Any] = [.font: labelFont()]
+        let sz = (text as NSString).size(withAttributes: attrs)
+        return CGRect(x: center.x - sz.height/2 - margin,
+                      y: center.y - sz.width/2  - margin,
+                      width:  sz.height + margin * 2,
+                      height: sz.width  + margin * 2)
+    }
+
+    private func drawLabelBackground(_ rect: CGRect, highlighted: Bool) {
+        let color = highlighted
+            ? NSColor.systemBlue.withAlphaComponent(0.15)
+            : NSColor.white.withAlphaComponent(0.85)
+        color.setFill()
+        NSBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 1), xRadius: 3, yRadius: 3).fill()
+    }
+
+    // MARK: - Drawing helpers
+
+    private func strokeLine(_ ctx: CGContext, _ a: CGPoint, _ b: CGPoint) {
+        ctx.move(to: a); ctx.addLine(to: b); ctx.strokePath()
+    }
+
+    private enum ArrowDir { case left, right, up, down }
+
+    private func drawArrow(_ ctx: CGContext, at p: CGPoint, dir: ArrowDir) {
+        let s: CGFloat = 6
+        let path = NSBezierPath()
+        switch dir {
+        case .right: path.move(to: CGPoint(x: p.x+s, y: p.y)); path.line(to: CGPoint(x: p.x, y: p.y-s/2)); path.line(to: CGPoint(x: p.x, y: p.y+s/2))
+        case .left:  path.move(to: CGPoint(x: p.x-s, y: p.y)); path.line(to: CGPoint(x: p.x, y: p.y-s/2)); path.line(to: CGPoint(x: p.x, y: p.y+s/2))
+        case .down:  path.move(to: CGPoint(x: p.x, y: p.y+s)); path.line(to: CGPoint(x: p.x-s/2, y: p.y)); path.line(to: CGPoint(x: p.x+s/2, y: p.y))
+        case .up:    path.move(to: CGPoint(x: p.x, y: p.y-s)); path.line(to: CGPoint(x: p.x-s/2, y: p.y)); path.line(to: CGPoint(x: p.x+s/2, y: p.y))
+        }
+        path.close(); path.fill()
+    }
+
+    private func labelFont() -> NSFont {
+        NSFont.monospacedDigitSystemFont(ofSize: 9.5, weight: .regular)
+    }
+
+    private func drawLabel(_ text: String, at center: CGPoint, color: NSColor, underline: Bool = false) {
+        var attrs: [NSAttributedString.Key: Any] = [
+            .font: labelFont(), .foregroundColor: color
+        ]
+        if underline { attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue }
+        let str  = NSAttributedString(string: text, attributes: attrs)
+        let size = str.size()
+        str.draw(at: CGPoint(x: center.x - size.width/2, y: center.y - size.height/2))
+    }
+
+    private func drawLabelVertical(_ text: String, at center: CGPoint, color: NSColor, underline: Bool = false) {
+        var attrs: [NSAttributedString.Key: Any] = [
+            .font: labelFont(), .foregroundColor: color
+        ]
+        if underline { attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue }
+        let str  = NSAttributedString(string: text, attributes: attrs)
+        let size = str.size()
+        NSGraphicsContext.current?.saveGraphicsState()
+        let t = NSAffineTransform()
+        t.translateX(by: center.x, yBy: center.y)
+        t.rotate(byDegrees: -90)
+        t.concat()
+        str.draw(at: CGPoint(x: -size.width/2, y: -size.height/2))
+        NSGraphicsContext.current?.restoreGraphicsState()
+    }
+
+    // MARK: - Inline dimension editor
+
+    private func showDimensionEditor(for shape: CADShape, axis: DimAxis) {
+        dismissDimensionEditor()
+
+        editingShapeID = shape.id
+        editingAxis    = axis
+
+        let currentPx: Double
+        let hitRect: CGRect?
+        switch axis {
+        case .width:
+            currentPx = Double(shape.bounds.width)
+            hitRect   = widthHitRects[shape.id]
+        case .height:
+            currentPx = Double(shape.bounds.height)
+            hitRect   = heightHitRects[shape.id]
+        }
+
+        guard let rect = hitRect else { return }
+
+        // Largeur adaptée à l'unité (les petites unités ont plus de chiffres)
+        let tfW: CGFloat = max(72, CGFloat(14 + document.unit.decimals * 8))
+        let tfH: CGFloat = 20
+        let tfRect = CGRect(
+            x: rect.midX - tfW/2,
+            y: rect.midY - tfH/2,
+            width: tfW, height: tfH
+        )
+
+        let tf = NSTextField(frame: tfRect)
+        tf.stringValue   = document.unit.formatValue(currentPx)
+        tf.font          = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        tf.alignment     = .center
+        tf.bezelStyle    = .roundedBezel
+        tf.focusRingType = .default
+        tf.delegate      = self
+        addSubview(tf)
+        window?.makeFirstResponder(tf)
+        tf.selectText(nil)
+
+        dimensionEditor = tf
+        needsDisplay = true
+    }
+
+    private func dismissDimensionEditor() {
+        dimensionEditor?.removeFromSuperview()
+        dimensionEditor = nil
+        editingShapeID  = nil
+        editingAxis     = nil
+        window?.makeFirstResponder(self)
+        needsDisplay = true
+    }
+
+    private func commitDimensionEdit(text: String) {
+        guard let id = editingShapeID,
+              let axis = editingAxis,
+              var shape = document.shapes.first(where: { $0.id == id })
+        else { dismissDimensionEditor(); return }
+
+        // Accept both "." and "," as decimal separator
+        let cleaned = text.replacingOccurrences(of: ",", with: ".")
+        guard let valueInUnit = Double(cleaned), valueInUnit > 0 else {
+            dismissDimensionEditor(); return
+        }
+
+        let px = document.unit.toPixels(valueInUnit)
+        switch axis {
+        case .width:  shape.bounds.size.width  = CGFloat(px)
+        case .height: shape.bounds.size.height = CGFloat(px)
+        }
+
+        document.updateShape(shape)
+        dismissDimensionEditor()
+    }
+
+    // MARK: - Mouse events
+
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+
+        // ── Pan avec espace ───────────────────────────────────────────
+        if isSpaceDown {
+            isPanning    = true
+            panLastWinPt = event.locationInWindow
+            NSCursor.closedHand.set()
+            return
+        }
+
+        let pt = convert(event.locationInWindow, from: nil)
+
+        // ── Dimension label hit test (only when a shape is selected) ──
+        if document.showDimensions {
+            for shape in document.shapes where document.selectedIDs.contains(shape.id) {
+                if let r = widthHitRects[shape.id],  r.contains(pt) {
+                    showDimensionEditor(for: shape, axis: .width);  return
+                }
+                if let r = heightHitRects[shape.id], r.contains(pt) {
+                    showDimensionEditor(for: shape, axis: .height); return
+                }
+            }
+        }
+
+        // Dismiss any open editor on other clicks
+        if dimensionEditor != nil { dismissDimensionEditor() }
+
+        if document.currentTool == .select {
+            handleSelectDown(pt: pt, event: event)
+        } else {
+            isDrawing = true
+            drawStart = pt
+            currentRect = .zero
+        }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+
+        // ── Pan ───────────────────────────────────────────────────────
+        if isPanning {
+            let win = event.locationInWindow
+            let dx = win.x - panLastWinPt.x   // positif = tiré vers la droite
+            let dy = win.y - panLastWinPt.y   // positif = tiré vers le haut (coordonnées fenêtre Y↑)
+            panLastWinPt = win
+
+            if let sv = enclosingScrollView {
+                let clip = sv.contentView
+                var origin = clip.bounds.origin
+                // La vue est flipped (Y↓), la fenêtre a Y↑ :
+                //   tirer droite (dx>0) → on voit le contenu à gauche → origin.x diminue
+                //   tirer haut  (dy>0) → on voit le contenu en haut  → origin.y diminue (flipped)
+                origin.x -= dx
+                origin.y += dy
+                let clamped = clip.constrainBoundsRect(
+                    NSRect(origin: origin, size: clip.bounds.size)
+                ).origin
+                clip.scroll(to: clamped)
+                sv.reflectScrolledClipView(clip)
+            }
+            return
+        }
+
+        let pt = convert(event.locationInWindow, from: nil)
+
+        if document.currentTool == .select {
+            if isDragging, !document.selectedIDs.isEmpty {
+                let delta = CGSize(width: pt.x - lastDragPt.x, height: pt.y - lastDragPt.y)
+                document.moveSelectedShapes(by: delta)
+                lastDragPt = pt
+                needsDisplay = true
+            }
+        } else if isDrawing {
+            var r = CGRect(
+                x: min(drawStart.x, pt.x), y: min(drawStart.y, pt.y),
+                width: abs(pt.x - drawStart.x), height: abs(pt.y - drawStart.y)
+            )
+            if document.currentTool.constrainedToSquare || event.modifierFlags.contains(.shift) {
+                let side = min(r.width, r.height)
+                r.origin.x = drawStart.x <= pt.x ? drawStart.x : drawStart.x - side
+                r.origin.y = drawStart.y <= pt.y ? drawStart.y : drawStart.y - side
+                r.size = CGSize(width: side, height: side)
+            }
+            currentRect = r
+            needsDisplay = true
+        }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        // ── Fin du pan ────────────────────────────────────────────────
+        if isPanning {
+            isPanning = false
+            window?.resetCursorRects()   // repasse en main ouverte si espace encore tenu
+            return
+        }
+
+        if document.currentTool == .select {
+            document.commitMove()
+            isDragging = false
+        } else if isDrawing {
+            isDrawing = false
+            if currentRect.width > 4, currentRect.height > 4 {
+                let type = document.currentTool.shapeType!
+                let shape = CADShape(type: type, bounds: currentRect,
+                                     name: document.nextName(for: type),
+                                     fillColor: document.fillColor,
+                                     strokeColor: document.strokeColor,
+                                     strokeWidth: document.strokeWidth)
+                document.addShape(shape)
+                document.selectShape(id: shape.id)
+            }
+            currentRect = .zero
+            needsDisplay = true
+        }
+    }
+
+    private func handleSelectDown(pt: CGPoint, event: NSEvent) {
+        let hit = document.shapes.reversed().first { $0.contains(pt) }
+        if let shape = hit {
+            document.selectShape(id: shape.id, additive: event.modifierFlags.contains(.shift))
+            isDragging = true; lastDragPt = pt
+            document.beginMove()
+        } else {
+            document.deselectAll()
+        }
+        needsDisplay = true
+    }
+
+    // MARK: - Keyboard
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func keyDown(with event: NSEvent) {
+        switch event.keyCode {
+        case 51, 117:                                                           // Delete
+            document.removeSelected(); needsDisplay = true
+        case 53:                                                                // Escape
+            dismissDimensionEditor()
+        case 123:                                                               // ←
+            document.beginMove()
+            document.moveSelectedShapes(by: CGSize(width: -1, height: 0)); needsDisplay = true
+        case 124:                                                               // →
+            document.beginMove()
+            document.moveSelectedShapes(by: CGSize(width:  1, height: 0)); needsDisplay = true
+        case 125:                                                               // ↓
+            document.beginMove()
+            document.moveSelectedShapes(by: CGSize(width:  0, height: 1)); needsDisplay = true
+        case 126:                                                               // ↑
+            document.beginMove()
+            document.moveSelectedShapes(by: CGSize(width:  0, height: -1)); needsDisplay = true
+        default:
+            super.keyDown(with: event)
+        }
+    }
+
+    override func keyUp(with event: NSEvent) {
+        switch event.keyCode {
+        case 123, 124, 125, 126:   // Touches fléchées : valider le déplacement
+            document.commitMove()
+        default:
+            super.keyUp(with: event)
+        }
+    }
+
+    // MARK: - Cursor
+
+    override func resetCursorRects() {
+        if isPanning {
+            addCursorRect(bounds, cursor: .closedHand)
+        } else if isSpaceDown {
+            addCursorRect(bounds, cursor: .openHand)
+        } else {
+            addCursorRect(bounds, cursor: document.currentTool == .select ? .arrow : .crosshair)
+        }
+    }
+}
+
+// MARK: - NSTextFieldDelegate
+
+extension CADCanvasView: NSTextFieldDelegate {
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        if selector == #selector(NSResponder.insertNewline(_:)) {
+            commitDimensionEdit(text: (control as? NSTextField)?.stringValue ?? "")
+            return true
+        }
+        if selector == #selector(NSResponder.cancelOperation(_:)) {
+            dismissDimensionEditor()
+            return true
+        }
+        return false
+    }
+}
