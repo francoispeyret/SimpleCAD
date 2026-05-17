@@ -27,6 +27,11 @@ struct SimpleCADApp: App {
                 Button("Rétablir")            { document.redo()   }.keyboardShortcut("z", modifiers: [.command, .shift])
                     .disabled(!document.canRedo)
             }
+            CommandMenu("Présentation") {
+                Button("Zoom avant")  { document.zoomIn()    }.keyboardShortcut("=", modifiers: .command)
+                Button("Zoom arrière") { document.zoomOut()  }.keyboardShortcut("-", modifiers: .command)
+                Button("Zoom 100%")   { document.resetZoom() }.keyboardShortcut("0", modifiers: .command)
+            }
             CommandGroup(after: .undoRedo) {
                 Divider()
                 Button("Tout sélectionner")   { document.selectAll()   }.keyboardShortcut("a")

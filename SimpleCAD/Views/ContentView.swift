@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-private let sidebarWidth: CGFloat = 240
+private let sidebarWidth: CGFloat = 260
 
 struct ContentView: View {
     @EnvironmentObject var document: CADDocument
@@ -15,32 +15,25 @@ struct ContentView: View {
                     .frame(width: geo.size.width, height: geo.size.height)
 
                 // ── Couche 1 : sidebar (bord gauche, pleine hauteur)
-                SidebarView()
-                    .background(.regularMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .stroke(Color(NSColor.separatorColor).opacity(0.2), lineWidth: 1)
-                    )
-                    .shadow(color: .black.opacity(0.12), radius: 10, x: 2, y: 4)
-                    .padding(.top, 44)
-                    .padding([.leading, .trailing], 15)
-                    .padding(.bottom, 28)
-                    .frame(width: sidebarWidth, height: geo.size.height)
+                GlassEffectContainer {
+                    SidebarView()
+                        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
+                }
+                .padding(.top, 44)
+                .padding([.leading, .trailing], 15)
+                .padding(.bottom, 28)
+                .frame(width: sidebarWidth, height: geo.size.height)
 
                 // ── Couche 2 : toolbar flottante ──────────────────
                 VStack(spacing: 0) {
-                    HStack(alignment: .top, spacing: 15) {
+                    HStack(alignment: .top, spacing: 0) {
                         Color.clear.frame(width: sidebarWidth)
-                        ToolbarView()
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .stroke(Color(NSColor.separatorColor).opacity(0.25), lineWidth: 1)
-                            )
-                            .shadow(color: .black.opacity(0.14), radius: 14, x: 0, y: 6)
-                            .padding(.trailing, 28)
-                            .padding(.top, 8)
+                        GlassEffectContainer {
+                            ToolbarView()
+                                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
+                        }
+                        .padding(.trailing, 28)
+                        .padding(.top, 44)
                     }
                     Spacer()
                 }
@@ -49,7 +42,10 @@ struct ContentView: View {
         }
         .ignoresSafeArea(.all)
         .frame(minWidth: 960, minHeight: 680)
-        .onAppear { maximiseWindow() }
+        .onAppear {
+            maximiseWindow()
+            setupNumpadShortcuts()
+        }
     }
 
     private func maximiseWindow() {
@@ -59,6 +55,21 @@ struct ContentView: View {
             let frame = screen.visibleFrame.insetBy(dx: 40, dy: 40)
             window.setFrame(frame, display: true)
             window.center()
+        }
+    }
+
+    /// Intercepte Cmd+[+/-/0] du pavé numérique (.numericPad flag ignoré par keyboardShortcut).
+    private func setupNumpadShortcuts() {
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.modifierFlags.contains(.command),
+                  event.modifierFlags.contains(.numericPad)
+            else { return event }
+            switch event.charactersIgnoringModifiers {
+            case "+": document.zoomIn();    return nil
+            case "-": document.zoomOut();   return nil
+            case "0": document.resetZoom(); return nil
+            default:  return event
+            }
         }
     }
 }

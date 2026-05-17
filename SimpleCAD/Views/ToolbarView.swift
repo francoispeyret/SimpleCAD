@@ -27,6 +27,12 @@ struct ToolbarView: View {
 
             separator
 
+            // ── Zoom ─────────────────────────────────────────────
+            zoomGroup
+                .padding(.horizontal, 12)
+
+            separator
+
             // ── Options ──────────────────────────────────────────
             optionGroup
                 .padding(.horizontal, 12)
@@ -38,7 +44,6 @@ struct ToolbarView: View {
                 .padding(.horizontal, 12)
         }
         .frame(height: toolbarHeight)
-        .background(.regularMaterial)
     }
 
     private var separator: some View {
@@ -108,6 +113,34 @@ struct ToolbarView: View {
                     .foregroundColor(.secondary)
             }
         }
+    }
+
+    // MARK: - Zoom
+
+    private var zoomGroup: some View {
+        HStack(spacing: 4) {
+            ActionButton(icon: "minus.magnifyingglass", tip: "Zoom arrière (⌘-)") {
+                document.zoomOut()
+            }
+            Button(action: { document.resetZoom() }) {
+                Text(zoomLabel)
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .frame(width: 52)
+                    .frame(height: 34)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(Color(NSColor.controlColor)))
+            }
+            .buttonStyle(.plain)
+            .help("Réinitialiser le zoom à 100% (⌘0)")
+            ActionButton(icon: "plus.magnifyingglass", tip: "Zoom avant (⌘+)") {
+                document.zoomIn()
+            }
+        }
+    }
+
+    private var zoomLabel: String {
+        let pct = document.zoomLevel * 100
+        if pct >= 100 { return String(format: "%.0f%%", pct) }
+        return String(format: "%.0f%%", pct)
     }
 
     // MARK: - Options

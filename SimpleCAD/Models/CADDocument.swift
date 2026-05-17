@@ -29,6 +29,7 @@ class CADDocument: ObservableObject {
     @Published var showDimensions:   Bool        = true
     @Published var unit:             DocumentUnit = .mm
     @Published var isDirty:          Bool        = false
+    @Published var zoomLevel:        Double      = 1.0
 
     @Published var scrollTarget: CGPoint? = CGPoint(
         x: CADDocument.defaultCanvasSize.width  / 2,
@@ -106,6 +107,12 @@ class CADDocument: ObservableObject {
         guard canRedo else { return }
         jumpToHistory(index: historyIndex + 1)
     }
+
+    // MARK: - Zoom
+
+    func zoomIn()    { zoomLevel = min(zoomLevel * 1.25, 16.0) }
+    func zoomOut()   { zoomLevel = max(zoomLevel / 1.25, 0.05) }
+    func resetZoom() { zoomLevel = 1.0 }
 
     // MARK: - Move tracking (canvas drag + touches fléchées)
 
