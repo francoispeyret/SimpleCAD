@@ -14,28 +14,29 @@ struct ContentView: View {
                 CanvasScrollView()
                     .frame(width: geo.size.width, height: geo.size.height)
 
-                // ── Couche 1 : sidebar (bord gauche, pleine hauteur)
+                // ── Couche 1 : toolbar (bord gauche, verticale) ───
                 GlassEffectContainer {
-                    SidebarView()
+                    ToolbarView()
                         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
                 }
                 .padding(.top, 44)
-                .padding([.leading, .trailing], 15)
+                .padding(.leading, 15)
+                .padding(.trailing, 6)
                 .padding(.bottom, 28)
-                .frame(width: sidebarWidth, height: geo.size.height)
+                .frame(width: toolbarWidth, height: geo.size.height)
 
-                // ── Couche 2 : toolbar flottante ──────────────────
-                VStack(spacing: 0) {
-                    HStack(alignment: .top, spacing: 0) {
-                        Color.clear.frame(width: sidebarWidth)
-                        GlassEffectContainer {
-                            ToolbarView()
-                                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
-                        }
-                        .padding(.trailing, 28)
-                        .padding(.top, 44)
-                    }
+                // ── Couche 2 : sidebar (bord droit) ──────────────
+                HStack(spacing: 0) {
                     Spacer()
+                    GlassEffectContainer {
+                        SidebarView()
+                            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
+                    }
+                    .padding(.top, 44)
+                    .padding(.leading, 6)
+                    .padding(.trailing, 15)
+                    .padding(.bottom, 28)
+                    .frame(width: sidebarWidth, height: geo.size.height)
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
             }

@@ -47,6 +47,9 @@ final class CADCanvasView: NSView {
     private let dimOffset:   CGFloat = 28  // px from shape edge to dim line
     private let dimExtend:   CGFloat = 6   // extension line overshoot
 
+    // Facteur inverse du zoom : maintient les éléments graphiques à taille constante à l'écran.
+    private var invZoom: CGFloat { CGFloat(1.0 / max(document.zoomLevel, 0.01)) }
+
     // MARK: - Flipped (Y grows downward, same as SVG)
 
     override var isFlipped: Bool { true }
@@ -144,8 +147,9 @@ final class CADCanvasView: NSView {
 
     private func drawSelectionBorder(_ shape: CADShape, ctx: CGContext) {
         ctx.saveGState()
-        let path = shape.bezierPath(); path.lineWidth = 1.5
-        let dash: [CGFloat] = [5, 3]; path.setLineDash(dash, count: 2, phase: 0)
+        let z = invZoom
+        let path = shape.bezierPath(); path.lineWidth = 1.5 * z
+        let dash: [CGFloat] = [5 * z, 3 * z]; path.setLineDash(dash, count: 2, phase: 0)
         NSColor.systemBlue.setStroke(); path.stroke()
         ctx.restoreGState()
     }
@@ -154,6 +158,7 @@ final class CADCanvasView: NSView {
 
     private func drawHandles(_ shape: CADShape, ctx: CGContext) {
         let b = shape.bounds
+        let hs = handleSize * invZoom
         let pts: [CGPoint] = [
             CGPoint(x: b.minX, y: b.minY), CGPoint(x: b.midX, y: b.minY),
             CGPoint(x: b.maxX, y: b.minY), CGPoint(x: b.maxX, y: b.midY),
@@ -161,10 +166,9 @@ final class CADCanvasView: NSView {
             CGPoint(x: b.minX, y: b.maxY), CGPoint(x: b.minX, y: b.midY),
         ]
         for pt in pts {
-            let r = CGRect(x: pt.x - handleSize/2, y: pt.y - handleSize/2,
-                           width: handleSize, height: handleSize)
+            let r = CGRect(x: pt.x - hs/2, y: pt.y - hs/2, width: hs, height: hs)
             NSColor.white.setFill(); NSBezierPath(rect: r).fill()
-            let bp = NSBezierPath(rect: r); bp.lineWidth = 1.5
+            let bp = NSBezierPath(rect: r); bp.lineWidth = 1.5 * invZoom
             NSColor.systemBlue.setStroke(); bp.stroke()
         }
     }
@@ -176,35 +180,36 @@ final class CADCanvasView: NSView {
         guard b.width > 4, b.height > 4 else { return }
 
         ctx.saveGState()
+        let z = invZoom
         let color = NSColor.systemBlue.withAlphaComponent(0.85)
-        color.setStroke(); color.setFill(); ctx.setLineWidth(1.0)
+        color.setStroke(); color.setFill(); ctx.setLineWidth(1.0 * z)
 
         // ── Width (horizontal, below shape) ──────────────────
-        let yDim = b.maxY + dimOffset
+        let yDim = b.maxY + dimOffset * z
         strokeLine(ctx, CGPoint(x: b.minX, y: yDim),   CGPoint(x: b.maxX, y: yDim))
-        strokeLine(ctx, CGPoint(x: b.minX, y: b.maxY), CGPoint(x: b.minX, y: yDim + dimExtend))
-        strokeLine(ctx, CGPoint(x: b.maxX, y: b.maxY), CGPoint(x: b.maxX, y: yDim + dimExtend))
+        strokeLine(ctx, CGPoint(x: b.minX, y: b.maxY), CGPoint(x: b.minX, y: yDim + dimExtend * z))
+        strokeLine(ctx, CGPoint(x: b.maxX, y: b.maxY), CGPoint(x: b.maxX, y: yDim + dimExtend * z))
         drawArrow(ctx, at: CGPoint(x: b.minX, y: yDim), dir: .right)
         drawArrow(ctx, at: CGPoint(x: b.maxX, y: yDim), dir: .left)
 
         let wLabel = document.unit.format(Double(b.width))
-        let wLabelCenter = CGPoint(x: b.midX, y: yDim + 5)
-        let wHit = labelHitRect(center: wLabelCenter, text: wLabel, margin: 6)
+        let wLabelCenter = CGPoint(x: b.midX, y: yDim + 5 * z)
+        let wHit = labelHitRect(center: wLabelCenter, text: wLabel, margin: 6 * z)
         drawLabelBackground(wHit, highlighted: editingShapeID == shape.id && editingAxis == .width)
         drawLabel(wLabel, at: wLabelCenter, color: color, underline: true)
         widthHitRects[shape.id] = wHit
 
         // ── Height (vertical, right of shape) ─────────────────
-        let xDim = b.maxX + dimOffset
+        let xDim = b.maxX + dimOffset * z
         strokeLine(ctx, CGPoint(x: xDim, y: b.minY),   CGPoint(x: xDim, y: b.maxY))
-        strokeLine(ctx, CGPoint(x: b.maxX, y: b.minY), CGPoint(x: xDim + dimExtend, y: b.minY))
-        strokeLine(ctx, CGPoint(x: b.maxX, y: b.maxY), CGPoint(x: xDim + dimExtend, y: b.maxY))
+        strokeLine(ctx, CGPoint(x: b.maxX, y: b.minY), CGPoint(x: xDim + dimExtend * z, y: b.minY))
+        strokeLine(ctx, CGPoint(x: b.maxX, y: b.maxY), CGPoint(x: xDim + dimExtend * z, y: b.maxY))
         drawArrow(ctx, at: CGPoint(x: xDim, y: b.minY), dir: .down)
         drawArrow(ctx, at: CGPoint(x: xDim, y: b.maxY), dir: .up)
 
         let hLabel = document.unit.format(Double(b.height))
-        let hLabelCenter = CGPoint(x: xDim + 18, y: b.midY)
-        let hHit = labelHitRectVertical(center: hLabelCenter, text: hLabel, margin: 6)
+        let hLabelCenter = CGPoint(x: xDim + 18 * z, y: b.midY)
+        let hHit = labelHitRectVertical(center: hLabelCenter, text: hLabel, margin: 6 * z)
         drawLabelBackground(hHit, highlighted: editingShapeID == shape.id && editingAxis == .height)
         drawLabelVertical(hLabel, at: hLabelCenter, color: color, underline: true)
         heightHitRects[shape.id] = hHit
@@ -237,7 +242,8 @@ final class CADCanvasView: NSView {
             ? NSColor.systemBlue.withAlphaComponent(0.15)
             : NSColor.white.withAlphaComponent(0.85)
         color.setFill()
-        NSBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 1), xRadius: 3, yRadius: 3).fill()
+        let z = invZoom
+        NSBezierPath(roundedRect: rect.insetBy(dx: z, dy: z), xRadius: 3 * z, yRadius: 3 * z).fill()
     }
 
     // MARK: - Drawing helpers
@@ -249,7 +255,7 @@ final class CADCanvasView: NSView {
     private enum ArrowDir { case left, right, up, down }
 
     private func drawArrow(_ ctx: CGContext, at p: CGPoint, dir: ArrowDir) {
-        let s: CGFloat = 6
+        let s: CGFloat = 6 * invZoom
         let path = NSBezierPath()
         switch dir {
         case .right: path.move(to: CGPoint(x: p.x+s, y: p.y)); path.line(to: CGPoint(x: p.x, y: p.y-s/2)); path.line(to: CGPoint(x: p.x, y: p.y+s/2))
@@ -261,7 +267,7 @@ final class CADCanvasView: NSView {
     }
 
     private func labelFont() -> NSFont {
-        NSFont.monospacedDigitSystemFont(ofSize: 9.5, weight: .regular)
+        NSFont.monospacedDigitSystemFont(ofSize: 9.5 * invZoom, weight: .regular)
     }
 
     private func drawLabel(_ text: String, at center: CGPoint, color: NSColor, underline: Bool = false) {
@@ -311,9 +317,10 @@ final class CADCanvasView: NSView {
 
         guard let rect = hitRect else { return }
 
-        // Largeur adaptée à l'unité (les petites unités ont plus de chiffres)
-        let tfW: CGFloat = max(72, CGFloat(14 + document.unit.decimals * 8))
-        let tfH: CGFloat = 20
+        // Largeur adaptée à l'unité ; toute la géométrie est mise à l'échelle inverse du zoom
+        let z = invZoom
+        let tfW: CGFloat = max(72, CGFloat(14 + document.unit.decimals * 8)) * z
+        let tfH: CGFloat = 20 * z
         let tfRect = CGRect(
             x: rect.midX - tfW/2,
             y: rect.midY - tfH/2,
@@ -322,7 +329,7 @@ final class CADCanvasView: NSView {
 
         let tf = NSTextField(frame: tfRect)
         tf.stringValue   = document.unit.formatValue(currentPx)
-        tf.font          = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        tf.font          = NSFont.monospacedDigitSystemFont(ofSize: 11 * z, weight: .medium)
         tf.alignment     = .center
         tf.bezelStyle    = .roundedBezel
         tf.focusRingType = .default

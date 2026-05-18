@@ -1,14 +1,14 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Toolbar height constant (shared with SidebarView)
-let toolbarHeight: CGFloat = 68
+// MARK: - Toolbar width constant (shared with ContentView)
+let toolbarWidth: CGFloat = 120
 
 struct ToolbarView: View {
     @EnvironmentObject var document: CADDocument
 
     var body: some View {
-        HStack(spacing: 0) {
+        VStack(spacing: 0) {
 
             // ── Outils ───────────────────────────────────────────
             toolGroup
@@ -17,53 +17,59 @@ struct ToolbarView: View {
 
             // ── Couleurs ─────────────────────────────────────────
             colorGroup
-                .padding(.horizontal, 12)
-
-            separator
-
-            // ── Épaisseur ────────────────────────────────────────
-            strokeGroup
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
 
             separator
 
             // ── Zoom ─────────────────────────────────────────────
             zoomGroup
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
 
             separator
 
             // ── Options ──────────────────────────────────────────
             optionGroup
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
 
             Spacer()
 
-            // ── Actions (droite) ─────────────────────────────────
+            separator
+
+            // ── Actions fichier (bas) ─────────────────────────────
             fileGroup
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
         }
-        .frame(height: toolbarHeight)
+        .frame(width: toolbarWidth)
     }
 
     private var separator: some View {
         Divider()
-            .frame(height: 44)
     }
 
     // MARK: - Outils
 
     private var toolGroup: some View {
-        HStack(spacing: 3) {
-            ToolButton(tool: .select,    isSelected: document.currentTool == .select,    shortcut: "V") { activate(.select) }
+        VStack(spacing: 4) {
+            // Outil sélection (pleine largeur)
+            ToolButton(tool: .select, isSelected: document.currentTool == .select, shortcut: "V") { activate(.select) }
 
-            Divider().frame(height: 36).padding(.horizontal, 3)
+            Divider().padding(.horizontal, 8).padding(.vertical, 2)
 
-            ForEach([Tool.rectangle, .square, .circle, .ellipse, .triangle, .line]) { tool in
-                ToolButton(tool: tool, isSelected: document.currentTool == tool, shortcut: toolShortcut(tool)) { activate(tool) }
+            // Formes en grille 2 colonnes
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 4) {
+                ForEach([Tool.rectangle, .square, .circle, .ellipse, .triangle, .line]) { tool in
+                    ToolButton(tool: tool, isSelected: document.currentTool == tool, shortcut: toolShortcut(tool)) {
+                        activate(tool)
+                    }
+                }
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .padding(.horizontal, 8)
     }
 
     private func activate(_ tool: Tool) {
@@ -82,23 +88,22 @@ struct ToolbarView: View {
     // MARK: - Couleurs
 
     private var colorGroup: some View {
-        HStack(spacing: 14) {
+        VStack(alignment: .leading, spacing: 10) {
             LabeledSwatch(label: "Remplissage", color: document.fillColor) { c in
                 document.fillColor = c; document.applyFillToSelection()
             }
             LabeledSwatch(label: "Contour", color: document.strokeColor) { c in
                 document.strokeColor = c; document.applyStrokeToSelection()
             }
+            
+            strokeGroup
         }
     }
 
     // MARK: - Épaisseur
 
     private var strokeGroup: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Épaisseur")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(.secondary)
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 5) {
                 TextField("", value: $document.strokeWidth, format: .number)
                     .frame(width: 46)
@@ -118,35 +123,35 @@ struct ToolbarView: View {
     // MARK: - Zoom
 
     private var zoomGroup: some View {
-        HStack(spacing: 4) {
-            ActionButton(icon: "minus.magnifyingglass", tip: "Zoom arrière (⌘-)") {
-                document.zoomOut()
-            }
-            Button(action: { document.resetZoom() }) {
-                Text(zoomLabel)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .frame(width: 52)
-                    .frame(height: 34)
-                    .background(RoundedRectangle(cornerRadius: 7).fill(Color(NSColor.controlColor)))
-            }
-            .buttonStyle(.plain)
-            .help("Réinitialiser le zoom à 100% (⌘0)")
-            ActionButton(icon: "plus.magnifyingglass", tip: "Zoom avant (⌘+)") {
-                document.zoomIn()
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+                ActionButton(icon: "minus.magnifyingglass", tip: "Zoom arrière (⌘-)") {
+                    document.zoomOut()
+                }
+                Button(action: { document.resetZoom() }) {
+                    Text(zoomLabel)
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .frame(width: 46)
+                        .frame(height: 28)
+                        .background(RoundedRectangle(cornerRadius: 7).fill(Color(NSColor.controlColor)))
+                }
+                .buttonStyle(.plain)
+                .help("Réinitialiser le zoom à 100% (⌘0)")
+                ActionButton(icon: "plus.magnifyingglass", tip: "Zoom avant (⌘+)") {
+                    document.zoomIn()
+                }
             }
         }
     }
 
     private var zoomLabel: String {
-        let pct = document.zoomLevel * 100
-        if pct >= 100 { return String(format: "%.0f%%", pct) }
-        return String(format: "%.0f%%", pct)
+        String(format: "%.0f%%", document.zoomLevel * 100)
     }
 
     // MARK: - Options
 
     private var optionGroup: some View {
-        HStack(spacing: 14) {
+        VStack(alignment: .leading, spacing: 8) {
             Toggle(isOn: $document.showGrid) {
                 Label("Grille", systemImage: "grid")
                     .font(.system(size: 12))
@@ -177,21 +182,17 @@ struct ToolbarView: View {
         }
     }
 
-    // MARK: - Actions (droite)
+    // MARK: - Actions fichier (bas)
 
     private var fileGroup: some View {
-        HStack(spacing: 6) {
-            ActionButton(icon: "doc.badge.plus",        tip: "Nouveau")         { document.new()  }
-            ActionButton(icon: "folder",                tip: "Ouvrir…")         { document.open() }
-            ActionButton(icon: "square.and.arrow.down", tip: "Enregistrer",
-                         disabled: !document.isDirty)                           { document.save() }
-
-            Divider().frame(height: 30).padding(.horizontal, 2)
-
-            ActionButton(icon: "arrow.uturn.backward", tip: "Annuler (⌘Z)",
-                         disabled: !document.canUndo)                           { document.undo() }
-            ActionButton(icon: "arrow.uturn.forward",  tip: "Rétablir (⌘⇧Z)",
-                         disabled: !document.canRedo)                           { document.redo() }
+        VStack(spacing: 8) {
+            HStack(spacing: 6) {
+                ActionButton(icon: "arrow.uturn.backward", tip: "Annuler (⌘Z)",
+                             disabled: !document.canUndo)                      { document.undo() }
+                ActionButton(icon: "arrow.uturn.forward",  tip: "Rétablir (⌘⇧Z)",
+                             disabled: !document.canRedo)                      { document.redo() }
+                Spacer()
+            }
         }
     }
 }
@@ -216,7 +217,7 @@ private struct ToolButton: View {
                     .font(.system(size: 9, weight: .medium, design: .monospaced))
                     .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
             }
-            .frame(width: 46, height: 54)
+            .frame(maxWidth: .infinity, minHeight: 50)
             .background(
                 RoundedRectangle(cornerRadius: 8)
                     .fill(
@@ -232,7 +233,7 @@ private struct ToolButton: View {
     }
 }
 
-// MARK: - ActionButton (droite)
+// MARK: - ActionButton
 
 private struct ActionButton: View {
     let icon:     String
@@ -300,7 +301,8 @@ private struct ColorSwatch: View {
                         lineWidth: 1.5
                     )
             }
-            .frame(width: 46, height: 28)
+            .frame(maxWidth: .infinity)
+            .frame(height: 28)
             .shadow(color: .black.opacity(0.08), radius: 1, x: 0, y: 1)
         }
         .buttonStyle(.plain)

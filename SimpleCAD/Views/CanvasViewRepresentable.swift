@@ -29,7 +29,7 @@ struct CanvasScrollRepresentable: NSViewRepresentable {
         scrollView.documentView = canvas
 
         // Réagir aux changements du document → redessiner
-        context.coordinator.cancellable = document.objectWillChange.sink { [weak canvas, weak scrollView] _ in
+        context.coordinator.cancellable = document.objectWillChange.sink { [weak canvas] _ in
             DispatchQueue.main.async {
                 canvas?.frame = NSRect(origin: .zero, size: document.canvasSize)
                 canvas?.needsDisplay = true
