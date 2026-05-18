@@ -1,3 +1,5 @@
+![SimpleCAD icon](./icon.png)
+
 # SimpleCAD
 
 Application de dessin technique légère pour macOS, construite avec SwiftUI et AppKit.
