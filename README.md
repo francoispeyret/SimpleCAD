@@ -4,7 +4,7 @@
 
 Application de dessin technique légère pour macOS, construite avec SwiftUI et AppKit.
 
-![macOS](https://img.shields.io/badge/macOS-14%2B-blue) ![Swift](https://img.shields.io/badge/Swift-5.9-orange) ![Format](https://img.shields.io/badge/Format-SVG-green)
+![macOS](https://img.shields.io/badge/macOS-26%2B-blue) ![Swift](https://img.shields.io/badge/Swift-5.9-orange) ![Format](https://img.shields.io/badge/Format-SVG-green)
 
 ---
 
@@ -135,7 +135,7 @@ CADDocument (ObservableObject)
 
 ## Prérequis
 
-- macOS 14 Sonoma ou ultérieur (utilise `GlassEffectContainer` / `.glassEffect`)
+- macOS 26 ou ultérieur (utilise `GlassEffectContainer` / `.glassEffect`)
 - Xcode 15+
 - Aucune dépendance externe
 

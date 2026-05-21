@@ -22,6 +22,7 @@ struct CanvasScrollRepresentable: NSViewRepresentable {
         let canvas = CADCanvasView()
         canvas.document = document
         canvas.frame = NSRect(origin: .zero, size: document.canvasSize)
+        scrollView.backgroundColor = canvas.surroundingBackgroundColor
         context.coordinator.canvasView = canvas
         context.coordinator.scrollView = scrollView
         context.coordinator.document   = document
@@ -46,11 +47,17 @@ struct CanvasScrollRepresentable: NSViewRepresentable {
 
         // Centrer au premier affichage
         DispatchQueue.main.async {
-            let target = document.scrollTarget
-                ?? CGPoint(x: document.canvasSize.width  / 2,
-                           y: document.canvasSize.height / 2)
-            context.coordinator.scroll(to: target)
-            document.scrollTarget = nil
+            if let bounds = document.zoomToFitBounds {
+                document.zoomToFitBounds = nil
+                document.scrollTarget = nil
+                context.coordinator.zoomToFit(bounds)
+            } else {
+                let target = document.scrollTarget
+                    ?? CGPoint(x: document.canvasSize.width  / 2,
+                               y: document.canvasSize.height / 2)
+                context.coordinator.scroll(to: target)
+                document.scrollTarget = nil
+            }
         }
 
         return scrollView
@@ -60,6 +67,7 @@ struct CanvasScrollRepresentable: NSViewRepresentable {
         guard let canvas = context.coordinator.canvasView else { return }
         canvas.document = document
         canvas.frame = NSRect(origin: .zero, size: document.canvasSize)
+        canvas.updateAppearanceColors()
         canvas.resetCursorRects()
         canvas.needsDisplay = true
 
@@ -73,8 +81,14 @@ struct CanvasScrollRepresentable: NSViewRepresentable {
             scrollView.setMagnification(document.zoomLevel, centeredAt: center)
         }
 
-        // Consommer scrollTarget
-        if let target = document.scrollTarget {
+        // Consommer zoomToFitBounds en priorité : il ajuste le zoom puis centre la vue.
+        if let bounds = document.zoomToFitBounds {
+            DispatchQueue.main.async {
+                document.zoomToFitBounds = nil
+                document.scrollTarget = nil
+                context.coordinator.zoomToFit(bounds)
+            }
+        } else if let target = document.scrollTarget {
             DispatchQueue.main.async {
                 context.coordinator.scroll(to: target)
                 document.scrollTarget = nil
@@ -95,13 +109,50 @@ struct CanvasScrollRepresentable: NSViewRepresentable {
         var lastAppliedZoom:       Double = 1.0
         var isUpdatingFromScrollView = false
 
+        func zoomToFit(_ rect: CGRect) {
+            guard let sv = scrollView,
+                  let doc = document else { return }
+
+            let viewport = sv.contentView.frame.size
+            guard viewport.width > 0, viewport.height > 0 else {
+                scroll(to: CGPoint(x: rect.midX, y: rect.midY))
+                return
+            }
+
+            let padding = max(max(rect.width, rect.height) * 0.08, 80)
+            let paddedWidth = max(rect.width + padding * 2, 1)
+            let paddedHeight = max(rect.height + padding * 2, 1)
+            let zoom = min(
+                sv.maxMagnification,
+                max(sv.minMagnification, Double(min(viewport.width / paddedWidth,
+                                                    viewport.height / paddedHeight)))
+            )
+
+            lastAppliedZoom = zoom
+            isUpdatingFromScrollView = true
+            let center = CGPoint(x: rect.midX, y: rect.midY)
+            sv.setMagnification(zoom, centeredAt: center)
+            doc.zoomLevel = zoom
+            scroll(to: center)
+
+            DispatchQueue.main.async { [weak self] in
+                self?.isUpdatingFromScrollView = false
+            }
+        }
+
         func scroll(to point: CGPoint) {
             guard let sv = scrollView else { return }
-            let vis = sv.contentView.bounds.size
-            let x = max(0, point.x * sv.magnification - vis.width  / 2)
-            let y = max(0, point.y * sv.magnification - vis.height / 2)
-            sv.contentView.scroll(to: CGPoint(x: x, y: y))
-            sv.reflectScrolledClipView(sv.contentView)
+            let clip = sv.contentView
+            let visibleSize = clip.documentVisibleRect.size
+            let targetRect = NSRect(
+                x: point.x - visibleSize.width / 2,
+                y: point.y - visibleSize.height / 2,
+                width: visibleSize.width,
+                height: visibleSize.height
+            )
+            let constrained = clip.constrainBoundsRect(targetRect)
+            clip.scroll(to: constrained.origin)
+            sv.reflectScrolledClipView(clip)
         }
 
         @objc func magnificationChanged(_ notification: Notification) {

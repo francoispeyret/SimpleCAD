@@ -139,10 +139,29 @@ struct CADShape: Identifiable, Codable {
     var fillColor:   CADColor
     var strokeColor: CADColor
     var strokeWidth: Double
+    var rotationAngle: Double
 
     var bounds: CGRect {
         get { codableBounds.cgRect }
         set { codableBounds = CodableRect(newValue) }
+    }
+
+    var center: CGPoint {
+        CGPoint(x: bounds.midX, y: bounds.midY)
+    }
+
+    var visualBounds: CGRect {
+        let points = rotatedBoundsPoints()
+        guard !points.isEmpty else { return bounds.standardized }
+        let xs = points.map(\.x)
+        let ys = points.map(\.y)
+        return CGRect(x: xs.min()!, y: ys.min()!,
+                      width: xs.max()! - xs.min()!,
+                      height: ys.max()! - ys.min()!)
+    }
+
+    var rotatedHandlePoints: [CGPoint] {
+        rotatedBoundsPoints()
     }
 
     // 96 DPI → 1 inch = 25.4 mm → 96/25.4 px/mm
@@ -154,50 +173,97 @@ struct CADShape: Identifiable, Codable {
     var yMM:      Double { Double(bounds.origin.y) / Self.pixelsPerMM }
 
     init(id: UUID = UUID(), type: ShapeType, bounds: CGRect, name: String,
-         fillColor: CADColor = .white, strokeColor: CADColor = .black, strokeWidth: Double = 2.0) {
+         fillColor: CADColor = .white, strokeColor: CADColor = .black,
+         strokeWidth: Double = 2.0, rotationAngle: Double = 0.0) {
         self.id = id; self.type = type; self.codableBounds = CodableRect(bounds)
         self.name = name; self.fillColor = fillColor
         self.strokeColor = strokeColor; self.strokeWidth = strokeWidth
+        self.rotationAngle = Self.normalizedRotation(rotationAngle)
     }
 
     func bezierPath() -> NSBezierPath {
+        let path = baseBezierPath()
+        guard abs(rotationAngle) > 0.0001 else { return path }
+
+        var transform = AffineTransform(translationByX: center.x, byY: center.y)
+        transform.rotate(byDegrees: CGFloat(rotationAngle))
+        transform.translate(x: -center.x, y: -center.y)
+        path.transform(using: transform)
+        return path
+    }
+
+    private func baseBezierPath() -> NSBezierPath {
         switch type {
         case .rectangle, .square:
-            return NSBezierPath(rect: bounds)
+            return NSBezierPath(rect: bounds.standardized)
         case .circle, .ellipse:
-            return NSBezierPath(ovalIn: bounds)
+            return NSBezierPath(ovalIn: bounds.standardized)
         case .triangle:
+            let b = bounds.standardized
             let p = NSBezierPath()
-            p.move(to: CGPoint(x: bounds.midX, y: bounds.minY))
-            p.line(to: CGPoint(x: bounds.maxX, y: bounds.maxY))
-            p.line(to: CGPoint(x: bounds.minX, y: bounds.maxY))
+            p.move(to: CGPoint(x: b.midX, y: b.minY))
+            p.line(to: CGPoint(x: b.maxX, y: b.maxY))
+            p.line(to: CGPoint(x: b.minX, y: b.maxY))
             p.close()
             return p
         case .line:
+            let b = bounds.standardized
             let p = NSBezierPath()
-            p.move(to: CGPoint(x: bounds.minX, y: bounds.midY))
-            p.line(to: CGPoint(x: bounds.maxX, y: bounds.midY))
+            p.move(to: CGPoint(x: b.minX, y: b.midY))
+            p.line(to: CGPoint(x: b.maxX, y: b.midY))
             return p
         }
     }
 
     func contains(_ point: CGPoint) -> Bool {
+        let localPoint = rotatedPoint(point, byDegrees: -rotationAngle, around: center)
+        let b = bounds.standardized
+
         switch type {
         case .rectangle, .square:
-            return bounds.contains(point)
+            return b.contains(localPoint)
         case .circle, .ellipse:
-            let cx = bounds.midX, cy = bounds.midY
-            let rx = bounds.width / 2, ry = bounds.height / 2
+            let cx = b.midX, cy = b.midY
+            let rx = b.width / 2, ry = b.height / 2
             guard rx > 0, ry > 0 else { return false }
-            let dx = (point.x - cx) / rx
-            let dy = (point.y - cy) / ry
+            let dx = (localPoint.x - cx) / rx
+            let dy = (localPoint.y - cy) / ry
             return dx * dx + dy * dy <= 1.0
         case .triangle:
-            return bezierPath().contains(point)
+            return baseBezierPath().contains(localPoint)
         case .line:
             let tol = max(CGFloat(strokeWidth) + 4, 8)
-            return bounds.minX <= point.x && point.x <= bounds.maxX
-                && abs(point.y - bounds.midY) <= tol
+            return b.minX <= localPoint.x && localPoint.x <= b.maxX
+                && abs(localPoint.y - b.midY) <= tol
         }
+    }
+
+    static func normalizedRotation(_ angle: Double) -> Double {
+        var normalized = angle.truncatingRemainder(dividingBy: 360)
+        if normalized <= -180 { normalized += 360 }
+        if normalized > 180 { normalized -= 360 }
+        return abs(normalized) < 0.0001 ? 0 : normalized
+    }
+
+    private func rotatedBoundsPoints() -> [CGPoint] {
+        let b = bounds.standardized
+        let points = [
+            CGPoint(x: b.minX, y: b.minY),
+            CGPoint(x: b.maxX, y: b.minY),
+            CGPoint(x: b.maxX, y: b.maxY),
+            CGPoint(x: b.minX, y: b.maxY),
+        ]
+        guard abs(rotationAngle) > 0.0001 else { return points }
+        return points.map { rotatedPoint($0, byDegrees: rotationAngle, around: center) }
+    }
+
+    private func rotatedPoint(_ point: CGPoint, byDegrees degrees: Double, around center: CGPoint) -> CGPoint {
+        let radians = degrees * Double.pi / 180
+        let dx = point.x - center.x
+        let dy = point.y - center.y
+        let cosA = CGFloat(cos(radians))
+        let sinA = CGFloat(sin(radians))
+        return CGPoint(x: center.x + dx * cosA - dy * sinA,
+                       y: center.y + dx * sinA + dy * cosA)
     }
 }

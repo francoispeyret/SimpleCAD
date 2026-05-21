@@ -2,6 +2,45 @@
 
 ---
 
+## v2.0.0 — 21 mai 2026
+
+Version centrée sur l'import SVG, la rotation des formes et l'intégration visuelle macOS 26.
+
+### Import SVG
+
+- Centrage automatique du contenu SVG à l'ouverture, même lorsque les formes importées sont très éloignées de l'origine du fichier
+- Zoom automatique adapté au contenu importé pour rendre l'ensemble du dessin visible dès l'ouverture
+- Agrandissement du plan de travail si nécessaire afin de conserver une marge confortable autour du contenu importé
+
+### Rotation des formes
+
+- Nouvelle poignée de rotation autour des formes sélectionnées
+- Rotation interactive autour du centre de la forme
+- Maintien de **Maj** pendant la rotation pour contraindre l'angle par incréments de 15°
+- Historique dédié aux rotations, compatible avec Annuler / Rétablir
+- Export SVG des formes tournées via `transform="rotate(...)"` et métadonnées SimpleCAD
+- Réimport des rotations enregistrées dans les SVG SimpleCAD
+
+### Cotes et sélection
+
+- Les cotes suivent désormais la rotation locale de la forme au lieu de rester alignées sur la boîte englobante horizontale
+- Labels de cotes réorientés pour rester lisibles pendant la rotation
+- Zones cliquables des cotes adaptées à leur orientation, avec édition inline conservée
+- Poignées de sélection placées sur les coins et milieux réels de la forme tournée
+
+### Apparence
+
+- Fond du canvas compatible avec le mode sombre système
+- Grille, poignées, fonds de labels et zone autour du plan de travail adaptés automatiquement au thème macOS
+- Conservation des couleurs de formes existantes pour préserver le rendu des fichiers SVG
+
+### Configuration requise
+
+- macOS 26 ou ultérieur
+- Architecture Apple Silicon ou Intel
+
+---
+
 ## v1.0.0 — 18 mai 2026
 
 Première version publique de SimpleCAD.

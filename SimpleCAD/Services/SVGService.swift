@@ -60,10 +60,20 @@ enum SVGService {
         let stroke = svgColor(shape.strokeColor)
         let strokeOp = fmt(shape.strokeColor.alpha)
         let sw = fmt(shape.strokeWidth)
+        let rotation = CADShape.normalizedRotation(shape.rotationAngle)
+        let rotationAttrs = abs(rotation) > 0.0001
+            ? """
+      transform="rotate(\(fmt(rotation)) \(fmt(b.midX)) \(fmt(b.midY))"
+      \(ns):rotation-deg="\(fmt(rotation))"
+"""
+            : """
+      \(ns):rotation-deg="0"
+"""
 
         let commonAttrs = """
       fill="\(fill)" fill-opacity="\(fillOp)"
       stroke="\(stroke)" stroke-opacity="\(strokeOp)" stroke-width="\(sw)"
+\(rotationAttrs)
       \(ns):id="\(shape.id.uuidString)"
       \(ns):name="\(xmlEscape(shape.name))"
       \(ns):type="\(shape.type.rawValue)"
@@ -219,8 +229,10 @@ private class SVGParser: NSObject, XMLParserDelegate {
             return
         }
 
+        let rotation = parseRotation(attrs: attrs)
         let shape = CADShape(id: id, type: type, bounds: bounds, name: name,
-                             fillColor: fill, strokeColor: stroke, strokeWidth: sw)
+                             fillColor: fill, strokeColor: stroke,
+                             strokeWidth: sw, rotationAngle: rotation)
         shapes.append(shape)
 
         let num = Int(name.split(separator: " ").last ?? "1") ?? 1
@@ -237,6 +249,24 @@ private class SVGParser: NSObject, XMLParserDelegate {
         }
         let alpha = Double(opacity ?? "1") ?? 1.0
         return CADColor(hex: hex, alpha: alpha)
+    }
+
+    private func parseRotation(attrs: [String: String]) -> Double {
+        if let raw = attrs["\(ns):rotation-deg"] ?? attrs["\(ns):rotation"],
+           let rotation = Double(raw) {
+            return rotation
+        }
+        guard let transform = attrs["transform"],
+              let open = transform.range(of: "rotate(") else { return 0 }
+
+        let afterOpen = transform[open.upperBound...]
+        guard let close = afterOpen.firstIndex(of: ")") else { return 0 }
+        let content = afterOpen[..<close]
+        let firstValue = content
+            .split { $0 == " " || $0 == "," || $0 == "\t" || $0 == "\n" }
+            .first
+
+        return firstValue.flatMap { Double($0) } ?? 0
     }
 
     private func polygonBounds(from pointsStr: String) -> CGRect {

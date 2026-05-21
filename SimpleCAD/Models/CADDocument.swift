@@ -35,6 +35,7 @@ class CADDocument: ObservableObject {
         x: CADDocument.defaultCanvasSize.width  / 2,
         y: CADDocument.defaultCanvasSize.height / 2
     )
+    @Published var zoomToFitBounds: CGRect? = nil
 
     // MARK: - History
 
@@ -42,6 +43,8 @@ class CADDocument: ObservableObject {
     @Published private(set) var historyIndex:   Int = 0
 
     private var preMoveShapes: [CADShape]? = nil
+    private var preRotationShapes: [CADShape]? = nil
+    private let importContentMargin: CGFloat = 400
 
     var canUndo: Bool { historyIndex > 0 }
     var canRedo: Bool { historyIndex < historyEntries.count - 1 }
@@ -134,6 +137,26 @@ class CADDocument: ObservableObject {
         if moved { recordAction("Déplacement") }
     }
 
+    func beginRotation() {
+        if preRotationShapes == nil { preRotationShapes = shapes }
+    }
+
+    func rotateShape(id: UUID, to angle: Double) {
+        guard let i = shapes.firstIndex(where: { $0.id == id }) else { return }
+        shapes[i].rotationAngle = CADShape.normalizedRotation(angle)
+        isDirty = true
+    }
+
+    func commitRotation() {
+        guard let pre = preRotationShapes else { return }
+        preRotationShapes = nil
+        let rotated = shapes.contains { shape in
+            guard let old = pre.first(where: { $0.id == shape.id }) else { return false }
+            return old.rotationAngle != shape.rotationAngle
+        }
+        if rotated { recordAction("Rotation") }
+    }
+
     // MARK: - Shape operations
 
     func addShape(_ shape: CADShape) {
@@ -143,7 +166,9 @@ class CADDocument: ObservableObject {
 
     func updateShape(_ shape: CADShape) {
         guard let i = shapes.firstIndex(where: { $0.id == shape.id }) else { return }
-        shapes[i] = shape
+        var updated = shape
+        updated.rotationAngle = CADShape.normalizedRotation(updated.rotationAngle)
+        shapes[i] = updated
         recordAction("Redimensionnement")
     }
 
@@ -235,6 +260,7 @@ class CADDocument: ObservableObject {
         historyEntries = [HistoryEntry(label: "Nouveau document", shapes: [])]
         historyIndex   = 0
         scrollTarget = CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
+        zoomToFitBounds = nil
     }
 
     func save() {
@@ -277,26 +303,54 @@ class CADDocument: ObservableObject {
     }
 
     private func applyLoadResult(_ result: SVGLoadResult, url: URL) {
-        shapes = result.shapes
+        let centeredContent = centerLoadedContent(result.shapes, in: result.canvasSize)
+
+        shapes = centeredContent.shapes
         counters = result.counters
-        canvasSize = result.canvasSize
+        canvasSize = centeredContent.canvasSize
         unit = result.unit
         currentFileURL = url
         selectedIDs = []
         isDirty = false
-        historyEntries = [HistoryEntry(label: "Ouverture fichier", shapes: result.shapes)]
+        historyEntries = [HistoryEntry(label: "Ouverture fichier", shapes: shapes)]
         historyIndex   = 0
-        scrollTarget = shapesBoundingCenter() ?? CGPoint(x: canvasSize.width / 2,
-                                                         y: canvasSize.height / 2)
+        scrollTarget = centeredContent.bounds.map { CGPoint(x: $0.midX, y: $0.midY) }
+            ?? CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
+        zoomToFitBounds = centeredContent.bounds
     }
 
-    private func shapesBoundingCenter() -> CGPoint? {
-        guard !shapes.isEmpty else { return nil }
-        let minX = shapes.map { $0.bounds.minX }.min()!
-        let minY = shapes.map { $0.bounds.minY }.min()!
-        let maxX = shapes.map { $0.bounds.maxX }.max()!
-        let maxY = shapes.map { $0.bounds.maxY }.max()!
-        return CGPoint(x: (minX + maxX) / 2, y: (minY + maxY) / 2)
+    private func centerLoadedContent(_ loadedShapes: [CADShape], in loadedCanvasSize: CGSize) -> (shapes: [CADShape], bounds: CGRect?, canvasSize: CGSize) {
+        guard let contentBounds = boundingRect(for: loadedShapes) else {
+            return (loadedShapes, nil, loadedCanvasSize)
+        }
+
+        let canvasSize = CGSize(
+            width: max(loadedCanvasSize.width, contentBounds.width + importContentMargin * 2),
+            height: max(loadedCanvasSize.height, contentBounds.height + importContentMargin * 2)
+        )
+        let targetCenter = CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
+        let delta = CGSize(width: targetCenter.x - contentBounds.midX,
+                           height: targetCenter.y - contentBounds.midY)
+
+        let centeredShapes = loadedShapes.map { shape in
+            var adjusted = shape
+            adjusted.bounds = adjusted.bounds.offsetBy(dx: delta.width, dy: delta.height)
+            return adjusted
+        }
+
+        return (
+            centeredShapes,
+            contentBounds.offsetBy(dx: delta.width, dy: delta.height),
+            canvasSize
+        )
+    }
+
+    private func boundingRect(for shapes: [CADShape]) -> CGRect? {
+        guard var bounds = shapes.first?.visualBounds.standardized else { return nil }
+        for shape in shapes.dropFirst() {
+            bounds = bounds.union(shape.visualBounds.standardized)
+        }
+        return bounds
     }
 
     func moveShapesReversed(from source: IndexSet, to destination: Int) {
