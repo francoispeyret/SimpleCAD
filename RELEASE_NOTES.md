@@ -2,6 +2,51 @@
 
 ---
 
+## v3.0.0 — 22 mai 2026
+
+Version majeure centrée sur l'ergonomie de l'interface, la précision du dessin et l'édition fine des formes.
+
+### Interface
+
+- Fenêtres d'outils et panneau droit rendus déplaçables
+- Bouton rond de masquage du panneau droit depuis le plan de travail
+- Réouverture du panneau droit avec réinitialisation à sa position par défaut
+- Retour à une barre de fenêtre macOS classique
+- Nom du fichier centré dans la barre supérieure
+- **Cmd-clic** sur le nom du fichier pour le retrouver dans le Finder
+- Menu des fichiers récemment ouverts
+
+### SVG et plan de travail
+
+- Enregistrement SVG avec un plan de travail ajusté au contenu réel du dessin
+- Ouverture SVG avec conservation d'un grand plan de travail virtuel confortable
+- Origine des règles placée sur le point le plus haut et le plus à gauche du contenu
+- Poignée de rotation alignée avec la rotation de la forme
+
+### Dessin et édition
+
+- Suppression des outils **Carré** et **Cercle**, devenus redondants
+- Outil **Ligne** reconstruit pour dessiner précisément dans toutes les directions par glisser-déposer
+- Maintien de **Maj** pendant le tracé d'une ligne pour contraindre l'angle par pas de 45°
+- Nouveau comportement des cotes de cercles et ellipses : affichage du diamètre plutôt que largeur/hauteur
+- Décalage des labels de diamètres pour éviter les chevauchements sur les ellipses
+- Nouvel outil **Points** avec raccourci `A`
+- Déplacement des points d'une ligne, des coins de rectangles/triangles et des sommets de polygones
+- Conversion automatique en polygone lorsqu'une forme classique est déformée point par point
+
+### Architecture
+
+- Refactor SOLID des responsabilités principales
+- Séparation des unités, outils, options d'affichage, géométrie, historique, fichiers récents et magnétisme dans des modules dédiés
+- `CanvasView`, `CADShape` et `CADDocument` allégés pour faciliter les prochaines grosses évolutions
+
+### Configuration requise
+
+- macOS 26 ou ultérieur
+- Architecture Apple Silicon ou Intel
+
+---
+
 ## v2.4.0 — 22 mai 2026
 
 Version centrée sur les transformations avancées, les guides de construction magnétiques et les finitions de fenêtre.

@@ -1,222 +1,5 @@
 import AppKit
 
-// MARK: - DocumentUnit
-
-enum DocumentUnit: String, CaseIterable, Codable, Identifiable {
-    var id: String { rawValue }
-    case mm = "mm"
-    case cm = "cm"
-    case m  = "m"
-    case km = "km"
-    case `in` = "in"
-    case ft   = "ft"
-    case yd   = "yd"
-    case mi   = "mi"
-
-    // Pixels per unit at 96 DPI (1 in = 96 px, 1 in = 25.4 mm)
-    var pixelsPerUnit: Double {
-        switch self {
-        case .mm: return 96.0 / 25.4
-        case .cm: return 96.0 / 2.54
-        case .m:  return 96.0 / 0.0254
-        case .km: return 96.0 / 0.0000254
-        case .in: return 96.0
-        case .ft: return 96.0 * 12.0
-        case .yd: return 96.0 * 36.0
-        case .mi: return 96.0 * 63360.0
-        }
-    }
-
-    var decimals: Int {
-        switch self {
-        case .mm: return 1
-        case .cm: return 2
-        case .m:  return 3
-        case .km: return 6
-        case .in: return 2
-        case .ft: return 3
-        case .yd: return 3
-        case .mi: return 5
-        }
-    }
-
-    func fromPixels(_ px: Double) -> Double { px / pixelsPerUnit }
-    func toPixels(_ value: Double) -> Double { value * pixelsPerUnit }
-
-    /// "25.4 mm"
-    func format(_ px: Double) -> String {
-        String(format: "%.\(decimals)f \(rawValue)", fromPixels(px))
-    }
-
-    /// "25.4" (sans label d'unité, pour les champs de saisie)
-    func formatValue(_ px: Double) -> String {
-        String(format: "%.\(decimals)f", fromPixels(px))
-    }
-}
-
-// MARK: - DimensionDisplayMode
-
-enum DimensionDisplayMode: String, CaseIterable, Identifiable {
-    var id: String { rawValue }
-
-    case none
-    case selected
-    case all
-
-    var title: String {
-        switch self {
-        case .none:     return "Aucune côte"
-        case .selected: return "Côte sur l'élément sélectionné"
-        case .all:      return "Côte sur tous les éléments"
-        }
-    }
-
-    var shortTitle: String {
-        switch self {
-        case .none:     return "Aucune"
-        case .selected: return "Sélection"
-        case .all:      return "Toutes"
-        }
-    }
-
-    var sfSymbol: String {
-        switch self {
-        case .none:     return "cross"
-        case .selected: return "rectangle.dashed"
-        case .all:      return "rectangle.dashed"
-        }
-    }
-}
-
-// MARK: - GridDisplayMode
-
-enum GridDisplayMode: String, CaseIterable, Identifiable {
-    var id: String { rawValue }
-
-    case none
-    case standard
-    case wide
-
-    var title: String {
-        switch self {
-        case .none:     return "Aucune grille"
-        case .standard: return "Grille par défaut"
-        case .wide:     return "Grille large"
-        }
-    }
-
-    var shortTitle: String {
-        switch self {
-        case .none:     return "Aucune"
-        case .standard: return "Défaut"
-        case .wide:     return "Large"
-        }
-    }
-
-    var sfSymbol: String {
-        switch self {
-        case .none:     return "grid"
-        case .standard: return "grid"
-        case .wide:     return "square.grid.2x2"
-        }
-    }
-
-    var spacing: CGFloat {
-        switch self {
-        case .none:     return 0
-        case .standard: return 20
-        case .wide:     return 80
-        }
-    }
-}
-
-// MARK: - ShapeType
-
-enum ShapeType: String, CaseIterable, Codable, Identifiable {
-    var id: String { rawValue }
-    case rectangle = "Rectangle"
-    case square    = "Carré"
-    case circle    = "Cercle"
-    case ellipse   = "Ellipse"
-    case triangle  = "Triangle"
-    case line      = "Ligne"
-    case polygon   = "Polygone"
-
-    var sfSymbol: String {
-        switch self {
-        case .rectangle: return "rectangle"
-        case .square:    return "square"
-        case .circle:    return "circle"
-        case .ellipse:   return "oval"
-        case .triangle:  return "triangle"
-        case .line:      return "line.diagonal"
-        case .polygon:   return "pentagon"
-        }
-    }
-}
-
-// MARK: - Tool
-
-enum Tool: String, CaseIterable, Identifiable {
-    var id: String { rawValue }
-    case select    = "Sélectionner"
-    case pointSelect = "Points"
-    case rectangle = "Rectangle"
-    case ellipse   = "Ellipse"
-    case triangle  = "Triangle"
-    case line      = "Ligne"
-
-    var shapeType: ShapeType? {
-        switch self {
-        case .select, .pointSelect:
-            return nil
-        case .rectangle: return .rectangle
-        case .ellipse:   return .ellipse
-        case .triangle:  return .triangle
-        case .line:      return .line
-        }
-    }
-
-    var sfSymbol: String {
-        switch self {
-        case .select:    return "arrow.up.left.circle.fill"
-        case .pointSelect: return "arrow.up.left.circle.dotted"
-        case .rectangle: return "rectangle"
-        case .ellipse:   return "oval"
-        case .triangle:  return "triangle"
-        case .line:      return "line.diagonal"
-        }
-    }
-
-    var constrainedToSquare: Bool { false }
-}
-
-// MARK: - CodableRect (CGRect wrapper)
-
-struct CodableRect: Codable, Equatable {
-    var x, y, width, height: Double
-
-    init(_ r: CGRect) {
-        x = Double(r.origin.x); y = Double(r.origin.y)
-        width = Double(r.size.width); height = Double(r.size.height)
-    }
-
-    var cgRect: CGRect { CGRect(x: x, y: y, width: width, height: height) }
-}
-
-struct CodablePoint: Codable, Equatable {
-    var x, y: Double
-
-    init(_ p: CGPoint) {
-        x = Double(p.x)
-        y = Double(p.y)
-    }
-
-    var cgPoint: CGPoint {
-        CGPoint(x: x, y: y)
-    }
-}
-
 // MARK: - CADShape
 
 struct CADShape: Identifiable, Codable, Equatable {
@@ -392,7 +175,7 @@ struct CADShape: Identifiable, Codable, Equatable {
                                  id: id)
         }
 
-        guard let polygonBounds = Self.bounds(for: points) else { return nil }
+        guard let polygonBounds = CADGeometry.boundingRect(for: points) else { return nil }
         return CADShape(id: id,
                         type: .polygon,
                         bounds: polygonBounds,
@@ -476,10 +259,7 @@ struct CADShape: Identifiable, Codable, Equatable {
     }
 
     static func normalizedRotation(_ angle: Double) -> Double {
-        var normalized = angle.truncatingRemainder(dividingBy: 360)
-        if normalized <= -180 { normalized += 360 }
-        if normalized > 180 { normalized -= 360 }
-        return abs(normalized) < 0.0001 ? 0 : normalized
+        CADGeometry.normalizedRotation(angle)
     }
 
     private func rotatedBoundsPoints() -> [CGPoint] {
@@ -507,23 +287,7 @@ struct CADShape: Identifiable, Codable, Equatable {
         return points.map { rotatedPoint($0, byDegrees: rotationAngle, around: center) }
     }
 
-    private static func bounds(for points: [CGPoint]) -> CGRect? {
-        guard !points.isEmpty else { return nil }
-        let xs = points.map(\.x)
-        let ys = points.map(\.y)
-        return CGRect(x: xs.min()!,
-                      y: ys.min()!,
-                      width: xs.max()! - xs.min()!,
-                      height: ys.max()! - ys.min()!)
-    }
-
     private func rotatedPoint(_ point: CGPoint, byDegrees degrees: Double, around center: CGPoint) -> CGPoint {
-        let radians = degrees * Double.pi / 180
-        let dx = point.x - center.x
-        let dy = point.y - center.y
-        let cosA = CGFloat(cos(radians))
-        let sinA = CGFloat(sin(radians))
-        return CGPoint(x: center.x + dx * cosA - dy * sinA,
-                       y: center.y + dx * sinA + dy * cosA)
+        CADGeometry.rotate(point, byDegrees: degrees, around: center)
     }
 }

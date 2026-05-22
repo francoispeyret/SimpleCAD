@@ -32,74 +32,6 @@ final class CADCanvasView: NSView {
 
     // MARK: - Resize drag state
 
-    private enum ResizeHandle: CaseIterable {
-        case topLeft
-        case top
-        case topRight
-        case right
-        case bottomRight
-        case bottom
-        case bottomLeft
-        case left
-
-        var opposite: ResizeHandle {
-            switch self {
-            case .topLeft:     return .bottomRight
-            case .top:         return .bottom
-            case .topRight:    return .bottomLeft
-            case .right:       return .left
-            case .bottomRight: return .topLeft
-            case .bottom:      return .top
-            case .bottomLeft:  return .topRight
-            case .left:        return .right
-            }
-        }
-
-        func point(in rect: CGRect) -> CGPoint {
-            switch self {
-            case .topLeft:     return CGPoint(x: rect.minX, y: rect.minY)
-            case .top:         return CGPoint(x: rect.midX, y: rect.minY)
-            case .topRight:    return CGPoint(x: rect.maxX, y: rect.minY)
-            case .right:       return CGPoint(x: rect.maxX, y: rect.midY)
-            case .bottomRight: return CGPoint(x: rect.maxX, y: rect.maxY)
-            case .bottom:      return CGPoint(x: rect.midX, y: rect.maxY)
-            case .bottomLeft:  return CGPoint(x: rect.minX, y: rect.maxY)
-            case .left:        return CGPoint(x: rect.minX, y: rect.midY)
-            }
-        }
-
-        var affectsX: Bool {
-            switch self {
-            case .topLeft, .topRight, .right, .bottomRight, .bottomLeft, .left:
-                return true
-            case .top, .bottom:
-                return false
-            }
-        }
-
-        var affectsY: Bool {
-            switch self {
-            case .topLeft, .top, .topRight, .bottomRight, .bottom, .bottomLeft:
-                return true
-            case .right, .left:
-                return false
-            }
-        }
-
-        var cursorAngleOffset: Double {
-            switch self {
-            case .left, .right:
-                return 0
-            case .top, .bottom:
-                return 90
-            case .topLeft, .bottomRight:
-                return -45
-            case .topRight, .bottomLeft:
-                return 45
-            }
-        }
-    }
-
     private var resizeHandleRects: [UUID: [ResizeHandle: CGRect]] = [:]
     private var isResizing = false
     private var resizingShapeID: UUID?
@@ -144,25 +76,6 @@ final class CADCanvasView: NSView {
     private var rotateStartShapeAngle: Double = 0
 
     // MARK: - Construction guides
-
-    private enum GuideOrientation { case vertical, horizontal }
-
-    private struct ConstructionGuide {
-        var orientation: GuideOrientation
-        var position: CGFloat
-        var start: CGFloat
-        var end: CGFloat
-    }
-
-    private struct SnapAnchor {
-        var value: CGFloat
-        var bounds: CGRect
-    }
-
-    private struct SnapResult {
-        var delta: CGSize
-        var guides: [ConstructionGuide]
-    }
 
     private struct RotationHandleGeometry {
         var anchor: CGPoint
@@ -966,80 +879,45 @@ final class CADCanvasView: NSView {
     }
 
     private func rotatedUnitX(byDegrees degrees: Double) -> CGVector {
-        let radians = degrees * Double.pi / 180
-        return CGVector(dx: CGFloat(cos(radians)), dy: CGFloat(sin(radians)))
+        CADGeometry.rotatedUnitX(byDegrees: degrees)
     }
 
     private func rotatedUnitY(byDegrees degrees: Double) -> CGVector {
-        let radians = degrees * Double.pi / 180
-        return CGVector(dx: CGFloat(-sin(radians)), dy: CGFloat(cos(radians)))
+        CADGeometry.rotatedUnitY(byDegrees: degrees)
     }
 
     private func offsetPoint(_ point: CGPoint, along vector: CGVector, by distance: CGFloat) -> CGPoint {
-        CGPoint(x: point.x + vector.dx * distance,
-                y: point.y + vector.dy * distance)
+        CADGeometry.offset(point, along: vector, by: distance)
     }
 
     private func midpoint(_ a: CGPoint, _ b: CGPoint) -> CGPoint {
-        CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
+        CADGeometry.midpoint(a, b)
     }
 
     private func reversed(_ vector: CGVector) -> CGVector {
-        CGVector(dx: -vector.dx, dy: -vector.dy)
+        CADGeometry.reversed(vector)
     }
 
     private func readableLabelAngle(_ angle: Double) -> Double {
-        var normalized = CADShape.normalizedRotation(angle)
-        if normalized > 90 { normalized -= 180 }
-        if normalized < -90 { normalized += 180 }
-        return normalized
+        CADGeometry.readableLabelAngle(angle)
     }
 
     private func rotatedRectBounds(center: CGPoint, size: CGSize, angleDegrees: Double) -> CGRect {
-        let halfW = size.width / 2
-        let halfH = size.height / 2
-        let corners = [
-            CGPoint(x: center.x - halfW, y: center.y - halfH),
-            CGPoint(x: center.x + halfW, y: center.y - halfH),
-            CGPoint(x: center.x + halfW, y: center.y + halfH),
-            CGPoint(x: center.x - halfW, y: center.y + halfH)
-        ].map { rotatePoint($0, byDegrees: angleDegrees, around: center) }
-        let xs = corners.map(\.x)
-        let ys = corners.map(\.y)
-        return CGRect(x: xs.min()!, y: ys.min()!,
-                      width: xs.max()! - xs.min()!,
-                      height: ys.max()! - ys.min()!)
+        CADGeometry.rotatedRectBounds(center: center, size: size, angleDegrees: angleDegrees)
     }
 
     private func rotatePoint(_ point: CGPoint, byDegrees degrees: Double, around center: CGPoint) -> CGPoint {
-        let radians = degrees * Double.pi / 180
-        let dx = point.x - center.x
-        let dy = point.y - center.y
-        let cosA = CGFloat(cos(radians))
-        let sinA = CGFloat(sin(radians))
-        return CGPoint(x: center.x + dx * cosA - dy * sinA,
-                       y: center.y + dx * sinA + dy * cosA)
+        CADGeometry.rotate(point, byDegrees: degrees, around: center)
     }
 
     private func angleDegrees(from center: CGPoint, to point: CGPoint) -> Double {
-        atan2(Double(point.y - center.y), Double(point.x - center.x)) * 180 / Double.pi
+        CADGeometry.angleDegrees(from: center, to: point)
     }
 
     private func constrainedLineEnd(from start: CGPoint,
                                     to point: CGPoint,
                                     snapTo45Degrees: Bool) -> CGPoint {
-        guard snapTo45Degrees else { return point }
-
-        let dx = point.x - start.x
-        let dy = point.y - start.y
-        let length = sqrt(dx * dx + dy * dy)
-        guard length > 0 else { return point }
-
-        let step = Double.pi / 4
-        let angle = atan2(Double(dy), Double(dx))
-        let snappedAngle = (angle / step).rounded() * step
-        return CGPoint(x: start.x + CGFloat(cos(snappedAngle)) * length,
-                       y: start.y + CGFloat(sin(snappedAngle)) * length)
+        CADGeometry.constrainedLineEnd(from: start, to: point, snapTo45Degrees: snapTo45Degrees)
     }
 
     private func resizedBounds(for shape: CADShape,
@@ -1124,7 +1002,7 @@ final class CADCanvasView: NSView {
     }
 
     private func dot(_ a: CGVector, _ b: CGVector) -> CGFloat {
-        a.dx * b.dx + a.dy * b.dy
+        CADGeometry.dot(a, b)
     }
 
     private func translatedShapes(from baseShapes: [UUID: CADShape], by delta: CGSize) -> [CADShape] {
@@ -1138,121 +1016,20 @@ final class CADCanvasView: NSView {
 
     private func snapMovingShapes(_ movingShapes: [CADShape],
                                   excluding excludedIDs: Set<UUID>) -> SnapResult {
-        let tolerance = snapToleranceScreen * invZoom
-        let references = referenceAnchors(excluding: excludedIDs)
-        guard !references.vertical.isEmpty || !references.horizontal.isEmpty else {
-            return SnapResult(delta: .zero, guides: [])
-        }
-
-        let moving = anchors(for: movingShapes)
-        var guides: [ConstructionGuide] = []
-        var delta = CGSize.zero
-
-        if let match = bestSnapMatch(moving: moving.vertical,
-                                     references: references.vertical,
-                                     tolerance: tolerance,
-                                     orientation: .vertical) {
-            delta.width = match.adjustment
-            guides.append(match.guide)
-        }
-
-        if let match = bestSnapMatch(moving: moving.horizontal,
-                                     references: references.horizontal,
-                                     tolerance: tolerance,
-                                     orientation: .horizontal) {
-            delta.height = match.adjustment
-            guides.append(match.guide)
-        }
-
-        return SnapResult(delta: delta, guides: guides)
+        snapper(excluding: excludedIDs).snap(movingShapes: movingShapes)
     }
 
     private func snappedPoint(_ point: CGPoint, excluding excludedIDs: Set<UUID>) -> (point: CGPoint, guides: [ConstructionGuide]) {
-        let tolerance = snapToleranceScreen * invZoom
-        let references = referenceAnchors(excluding: excludedIDs)
-        let pointBounds = CGRect(x: point.x, y: point.y, width: 0, height: 0)
-        let verticalAnchor = [SnapAnchor(value: point.x, bounds: pointBounds)]
-        let horizontalAnchor = [SnapAnchor(value: point.y, bounds: pointBounds)]
-
-        var snapped = point
-        var guides: [ConstructionGuide] = []
-
-        if let match = bestSnapMatch(moving: verticalAnchor,
-                                     references: references.vertical,
-                                     tolerance: tolerance,
-                                     orientation: .vertical) {
-            snapped.x += match.adjustment
-            guides.append(match.guide)
-        }
-
-        if let match = bestSnapMatch(moving: horizontalAnchor,
-                                     references: references.horizontal,
-                                     tolerance: tolerance,
-                                     orientation: .horizontal) {
-            snapped.y += match.adjustment
-            guides.append(match.guide)
-        }
-
-        return (snapped, guides)
+        snapper(excluding: excludedIDs).snap(point: point)
     }
 
-    private func referenceAnchors(excluding excludedIDs: Set<UUID>) -> (vertical: [SnapAnchor], horizontal: [SnapAnchor]) {
-        anchors(for: document.shapes.filter { !excludedIDs.contains($0.id) })
-    }
-
-    private func anchors(for shapes: [CADShape]) -> (vertical: [SnapAnchor], horizontal: [SnapAnchor]) {
-        var vertical: [SnapAnchor] = []
-        var horizontal: [SnapAnchor] = []
-
-        for shape in shapes {
-            let b = shape.visualBounds.standardized
-            let points = shape.rotatedHandlePoints + [shape.center]
-            vertical.append(contentsOf: points.map { SnapAnchor(value: $0.x, bounds: b) })
-            horizontal.append(contentsOf: points.map { SnapAnchor(value: $0.y, bounds: b) })
-        }
-
-        return (vertical, horizontal)
-    }
-
-    private func bestSnapMatch(moving: [SnapAnchor],
-                               references: [SnapAnchor],
-                               tolerance: CGFloat,
-                               orientation: GuideOrientation) -> (adjustment: CGFloat, guide: ConstructionGuide)? {
-        var best: (distance: CGFloat, adjustment: CGFloat, guide: ConstructionGuide)?
-        let padding = constructionGuidePadding * invZoom
-
-        for movingAnchor in moving {
-            for reference in references {
-                let adjustment = reference.value - movingAnchor.value
-                let distance = abs(adjustment)
-                guard distance <= tolerance else { continue }
-
-                let guide: ConstructionGuide
-                switch orientation {
-                case .vertical:
-                    let start = min(movingAnchor.bounds.minY, reference.bounds.minY) - padding
-                    let end = max(movingAnchor.bounds.maxY, reference.bounds.maxY) + padding
-                    guide = ConstructionGuide(orientation: .vertical,
-                                              position: reference.value,
-                                              start: start,
-                                              end: end)
-                case .horizontal:
-                    let start = min(movingAnchor.bounds.minX, reference.bounds.minX) - padding
-                    let end = max(movingAnchor.bounds.maxX, reference.bounds.maxX) + padding
-                    guide = ConstructionGuide(orientation: .horizontal,
-                                              position: reference.value,
-                                              start: start,
-                                              end: end)
-                }
-
-                if best == nil || distance < best!.distance {
-                    best = (distance, adjustment, guide)
-                }
-            }
-        }
-
-        guard let best else { return nil }
-        return (adjustment: best.adjustment, guide: best.guide)
+    private func snapper(excluding excludedIDs: Set<UUID>) -> ConstructionSnapper {
+        ConstructionSnapper(
+            shapes: document.shapes,
+            excludedIDs: excludedIDs,
+            tolerance: snapToleranceScreen * invZoom,
+            guidePadding: constructionGuidePadding * invZoom
+        )
     }
 
     private func drawArrow(_ ctx: CGContext, at p: CGPoint, direction: CGVector) {

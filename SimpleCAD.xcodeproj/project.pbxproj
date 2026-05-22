@@ -20,6 +20,15 @@
 		AA000000000000000000011 /* SVGService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000011 /* SVGService.swift */; };
 		AA000000000000000000013 /* HistoryPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000014 /* HistoryPanelView.swift */; };
 		AA000000000000000000014 /* WindowTabPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000015 /* WindowTabPolicy.swift */; };
+		AA000000000000000000015 /* DocumentUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000016 /* DocumentUnit.swift */; };
+		AA000000000000000000016 /* DisplayOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000017 /* DisplayOptions.swift */; };
+		AA000000000000000000017 /* CADTooling.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000018 /* CADTooling.swift */; };
+		AA000000000000000000018 /* CADGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000019 /* CADGeometry.swift */; };
+		AA000000000000000000019 /* CADHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000020 /* CADHistoryStore.swift */; };
+		AA000000000000000000020 /* RecentFileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000021 /* RecentFileStore.swift */; };
+		AA000000000000000000021 /* DocumentLayoutService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000022 /* DocumentLayoutService.swift */; };
+		AA000000000000000000022 /* ConstructionSnapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000023 /* ConstructionSnapper.swift */; };
+		AA000000000000000000023 /* CanvasResizeHandle.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000024 /* CanvasResizeHandle.swift */; };
 		AA000000000000000000012 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000012 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -40,6 +49,15 @@
 		AA100000000000000000013 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AA100000000000000000014 /* HistoryPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryPanelView.swift; sourceTree = "<group>"; };
 		AA100000000000000000015 /* WindowTabPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowTabPolicy.swift; sourceTree = "<group>"; };
+		AA100000000000000000016 /* DocumentUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentUnit.swift; sourceTree = "<group>"; };
+		AA100000000000000000017 /* DisplayOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayOptions.swift; sourceTree = "<group>"; };
+		AA100000000000000000018 /* CADTooling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CADTooling.swift; sourceTree = "<group>"; };
+		AA100000000000000000019 /* CADGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CADGeometry.swift; sourceTree = "<group>"; };
+		AA100000000000000000020 /* CADHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CADHistoryStore.swift; sourceTree = "<group>"; };
+		AA100000000000000000021 /* RecentFileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentFileStore.swift; sourceTree = "<group>"; };
+		AA100000000000000000022 /* DocumentLayoutService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentLayoutService.swift; sourceTree = "<group>"; };
+		AA100000000000000000023 /* ConstructionSnapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConstructionSnapper.swift; sourceTree = "<group>"; };
+		AA100000000000000000024 /* CanvasResizeHandle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasResizeHandle.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -70,6 +88,10 @@
 			isa = PBXGroup;
 			children = (
 				AA100000000000000000002 /* CADColor.swift */,
+				AA100000000000000000019 /* CADGeometry.swift */,
+				AA100000000000000000018 /* CADTooling.swift */,
+				AA100000000000000000017 /* DisplayOptions.swift */,
+				AA100000000000000000016 /* DocumentUnit.swift */,
 				AA100000000000000000003 /* CADShape.swift */,
 				AA100000000000000000004 /* CADDocument.swift */,
 			);
@@ -81,6 +103,7 @@
 			children = (
 				AA100000000000000000005 /* ContentView.swift */,
 				AA100000000000000000006 /* CanvasView.swift */,
+				AA100000000000000000024 /* CanvasResizeHandle.swift */,
 				AA100000000000000000007 /* CanvasViewRepresentable.swift */,
 				AA100000000000000000008 /* ShapeListView.swift */,
 				AA100000000000000000009 /* ToolbarView.swift */,
@@ -93,6 +116,10 @@
 		AA300000000000000000004 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				AA100000000000000000023 /* ConstructionSnapper.swift */,
+				AA100000000000000000020 /* CADHistoryStore.swift */,
+				AA100000000000000000022 /* DocumentLayoutService.swift */,
+				AA100000000000000000021 /* RecentFileStore.swift */,
 				AA100000000000000000011 /* SVGService.swift */,
 				AA100000000000000000015 /* WindowTabPolicy.swift */,
 			);
@@ -186,14 +213,23 @@
 			files = (
 				AA000000000000000000001 /* SimpleCADApp.swift in Sources */,
 				AA000000000000000000002 /* CADColor.swift in Sources */,
+				AA000000000000000000018 /* CADGeometry.swift in Sources */,
+				AA000000000000000000017 /* CADTooling.swift in Sources */,
+				AA000000000000000000016 /* DisplayOptions.swift in Sources */,
+				AA000000000000000000015 /* DocumentUnit.swift in Sources */,
 				AA000000000000000000003 /* CADShape.swift in Sources */,
 				AA000000000000000000004 /* CADDocument.swift in Sources */,
 				AA000000000000000000005 /* ContentView.swift in Sources */,
 				AA000000000000000000006 /* CanvasView.swift in Sources */,
+				AA000000000000000000023 /* CanvasResizeHandle.swift in Sources */,
 				AA000000000000000000007 /* CanvasViewRepresentable.swift in Sources */,
 				AA000000000000000000008 /* ShapeListView.swift in Sources */,
 				AA000000000000000000009 /* ToolbarView.swift in Sources */,
 				AA000000000000000000010 /* StatusBarView.swift in Sources */,
+				AA000000000000000000022 /* ConstructionSnapper.swift in Sources */,
+				AA000000000000000000019 /* CADHistoryStore.swift in Sources */,
+				AA000000000000000000021 /* DocumentLayoutService.swift in Sources */,
+				AA000000000000000000020 /* RecentFileStore.swift in Sources */,
 				AA000000000000000000011 /* SVGService.swift in Sources */,
 				AA000000000000000000013 /* HistoryPanelView.swift in Sources */,
 				AA000000000000000000014 /* WindowTabPolicy.swift in Sources */,
@@ -329,7 +365,7 @@
 				CODE_SIGN_ENTITLEMENTS = "";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SimpleCAD/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -352,7 +388,7 @@
 				CODE_SIGN_ENTITLEMENTS = "";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SimpleCAD/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
