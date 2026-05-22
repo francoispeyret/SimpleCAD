@@ -1,4 +1,4 @@
-![SimpleCAD icon](./icon.png)
+<img src="./SimpleCAD/Assets.xcassets/AppIcon.appiconset/icon_256.png" alt="Icône de l'application SimpleCAD" width="256" height="256">
 
 # SimpleCAD
 
