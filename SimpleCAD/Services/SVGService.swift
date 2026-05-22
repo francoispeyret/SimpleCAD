@@ -12,6 +12,7 @@ struct SVGLoadResult {
     var shapes:     [CADShape]
     var counters:   [ShapeType: Int]
     var canvasSize: CGSize
+    var virtualCanvasSize: CGSize?
     var unit:       DocumentUnit = .mm
 }
 
@@ -27,8 +28,10 @@ enum SVGService {
     }
 
     private static func buildSVG(document: CADDocument) -> String {
-        let w = document.canvasSize.width
-        let h = document.canvasSize.height
+        let exportBounds = exportBounds(for: document.shapes)
+        let exportOrigin = exportBounds?.origin ?? .zero
+        let w = max(exportBounds?.width ?? document.canvasSize.width, 1)
+        let h = max(exportBounds?.height ?? document.canvasSize.height, 1)
         let pxMM = CADShape.pixelsPerMM
 
         var lines: [String] = []
@@ -40,20 +43,24 @@ enum SVGService {
      viewBox="0 0 \(fmt(w)) \(fmt(h))"
      \(ns):canvas-width-mm="\(fmt(w / pxMM))"
      \(ns):canvas-height-mm="\(fmt(h / pxMM))"
+     \(ns):virtual-canvas-width-mm="\(fmt(document.canvasSize.width / pxMM))"
+     \(ns):virtual-canvas-height-mm="\(fmt(document.canvasSize.height / pxMM))"
      \(ns):unit="\(document.unit.rawValue)">
 """)
 
         lines.append("  <title>SimpleCAD Plan</title>")
 
         for shape in document.shapes {
-            lines.append(shapeToSVG(shape))
+            lines.append(shapeToSVG(shape, offset: CGSize(width: -exportOrigin.x, height: -exportOrigin.y)))
         }
 
         lines.append("</svg>")
         return lines.joined(separator: "\n")
     }
 
-    private static func shapeToSVG(_ shape: CADShape) -> String {
+    private static func shapeToSVG(_ originalShape: CADShape, offset: CGSize = .zero) -> String {
+        var shape = originalShape
+        shape.translate(by: offset)
         let b = shape.bounds
         let fill   = svgColor(shape.fillColor)
         let fillOp = fmt(shape.fillColor.alpha)
@@ -90,9 +97,17 @@ enum SVGService {
 \(commonAttrs)/>
 """
         case .circle:
-            let cx = b.midX, cy = b.midY, r = b.width / 2
-            return """
+            let cx = b.midX, cy = b.midY
+            if abs(b.width - b.height) <= 0.0001 {
+                let r = b.width / 2
+                return """
   <circle cx="\(fmt(cx))" cy="\(fmt(cy))" r="\(fmt(r))"
+\(commonAttrs)/>
+"""
+            }
+            let rx = b.width / 2, ry = b.height / 2
+            return """
+  <ellipse cx="\(fmt(cx))" cy="\(fmt(cy))" rx="\(fmt(rx))" ry="\(fmt(ry))"
 \(commonAttrs)/>
 """
         case .ellipse:
@@ -107,12 +122,34 @@ enum SVGService {
   <polygon points="\(pts)"
 \(commonAttrs)/>
 """
+        case .polygon:
+            let points = shape.customPoints
+            let pts = points
+                .map { "\(fmt($0.x)),\(fmt($0.y))" }
+                .joined(separator: " ")
+            return """
+  <polygon points="\(pts)"
+\(commonAttrs)/>
+"""
         case .line:
             return """
   <line x1="\(fmt(b.minX))" y1="\(fmt(b.midY))" x2="\(fmt(b.maxX))" y2="\(fmt(b.midY))"
 \(commonAttrs)/>
 """
         }
+    }
+
+    private static func exportBounds(for shapes: [CADShape]) -> CGRect? {
+        guard var bounds = shapes.first.map(exportBounds(for:)) else { return nil }
+        for shape in shapes.dropFirst() {
+            bounds = bounds.union(exportBounds(for: shape))
+        }
+        return bounds.standardized
+    }
+
+    private static func exportBounds(for shape: CADShape) -> CGRect {
+        let strokeOverflow = shape.strokeColor.alpha > 0 ? max(CGFloat(shape.strokeWidth) / 2, 0) : 0
+        return shape.visualBounds.standardized.insetBy(dx: -strokeOverflow, dy: -strokeOverflow)
     }
 
     // MARK: Load
@@ -156,6 +193,7 @@ private class SVGParser: NSObject, XMLParserDelegate {
     var shapes:    [CADShape]      = []
     var counters:  [ShapeType: Int] = [:]
     var canvasSize = CGSize(width: 2480, height: 1754)
+    var virtualCanvasSize: CGSize?
     var unit:      DocumentUnit    = .mm
     var error: Error?
 
@@ -164,7 +202,11 @@ private class SVGParser: NSObject, XMLParserDelegate {
         parser.delegate = self
         parser.parse()
         if let e = error { throw e }
-        return SVGLoadResult(shapes: shapes, counters: counters, canvasSize: canvasSize, unit: unit)
+        return SVGLoadResult(shapes: shapes,
+                             counters: counters,
+                             canvasSize: canvasSize,
+                             virtualCanvasSize: virtualCanvasSize,
+                             unit: unit)
     }
 
     func parser(_ parser: XMLParser, didStartElement element: String,
@@ -177,6 +219,11 @@ private class SVGParser: NSObject, XMLParserDelegate {
                let hmm = attrs["\(ns):canvas-height-mm"].flatMap(Double.init) {
                 canvasSize = CGSize(width: wmm * CADShape.pixelsPerMM,
                                    height: hmm * CADShape.pixelsPerMM)
+            }
+            if let wmm = attrs["\(ns):virtual-canvas-width-mm"].flatMap(Double.init),
+               let hmm = attrs["\(ns):virtual-canvas-height-mm"].flatMap(Double.init) {
+                virtualCanvasSize = CGSize(width: wmm * CADShape.pixelsPerMM,
+                                           height: hmm * CADShape.pixelsPerMM)
             }
             if let unitStr = attrs["\(ns):unit"],
                let u = DocumentUnit(rawValue: unitStr) {
@@ -196,6 +243,34 @@ private class SVGParser: NSObject, XMLParserDelegate {
         let fill   = parseColor(hex: attrs["fill"],   opacity: attrs["fill-opacity"])
         let stroke = parseColor(hex: attrs["stroke"], opacity: attrs["stroke-opacity"])
         let sw     = Double(attrs["stroke-width"] ?? "2") ?? 2.0
+
+        if element == "line", type == .line {
+            let x1 = CGFloat(Double(attrs["x1"] ?? "0") ?? 0)
+            let y1 = CGFloat(Double(attrs["y1"] ?? "0") ?? 0)
+            let x2 = CGFloat(Double(attrs["x2"] ?? "0") ?? 0)
+            let y2 = CGFloat(Double(attrs["y2"] ?? "0") ?? 0)
+            var start = CGPoint(x: x1, y: y1)
+            var end = CGPoint(x: x2, y: y2)
+
+            if let rotation = parseRotateTransform(attrs: attrs) {
+                let center = rotation.center ?? .zero
+                start = rotatePoint(start, byDegrees: rotation.angle, around: center)
+                end = rotatePoint(end, byDegrees: rotation.angle, around: center)
+            }
+
+            let shape = CADShape.line(from: start,
+                                      to: end,
+                                      name: name,
+                                      fillColor: fill,
+                                      strokeColor: stroke,
+                                      strokeWidth: sw,
+                                      id: id)
+            shapes.append(shape)
+
+            let num = Int(name.split(separator: " ").last ?? "1") ?? 1
+            counters[type] = max(counters[type] ?? 0, num)
+            return
+        }
 
         // Reconstruct bounds from pixel coordinates in the SVG element
         let bounds: CGRect
@@ -219,12 +294,22 @@ private class SVGParser: NSObject, XMLParserDelegate {
             bounds = CGRect(x: cx - rx, y: cy - ry, width: rx*2, height: ry*2)
         case "polygon":
             // Parse points to get bounding box
-            bounds = polygonBounds(from: attrs["points"] ?? "")
+            let points = polygonPoints(from: attrs["points"] ?? "")
+            bounds = polygonBounds(from: points)
+            if type == .polygon {
+                let rotation = parseRotation(attrs: attrs)
+                let shape = CADShape(id: id, type: type, bounds: bounds, name: name,
+                                     fillColor: fill, strokeColor: stroke,
+                                     strokeWidth: sw, rotationAngle: rotation,
+                                     points: points)
+                shapes.append(shape)
+
+                let num = Int(name.split(separator: " ").last ?? "1") ?? 1
+                counters[type] = max(counters[type] ?? 0, num)
+                return
+            }
         case "line":
-            let x1 = CGFloat(Double(attrs["x1"] ?? "0") ?? 0)
-            let y1 = CGFloat(Double(attrs["y1"] ?? "0") ?? 0)
-            let x2 = CGFloat(Double(attrs["x2"] ?? "0") ?? 0)
-            bounds = CGRect(x: x1, y: y1 - sw/2, width: x2 - x1, height: sw)
+            return
         default:
             return
         }
@@ -256,27 +341,51 @@ private class SVGParser: NSObject, XMLParserDelegate {
            let rotation = Double(raw) {
             return rotation
         }
-        guard let transform = attrs["transform"],
-              let open = transform.range(of: "rotate(") else { return 0 }
-
-        let afterOpen = transform[open.upperBound...]
-        guard let close = afterOpen.firstIndex(of: ")") else { return 0 }
-        let content = afterOpen[..<close]
-        let firstValue = content
-            .split { $0 == " " || $0 == "," || $0 == "\t" || $0 == "\n" }
-            .first
-
-        return firstValue.flatMap { Double($0) } ?? 0
+        return parseRotateTransform(attrs: attrs)?.angle ?? 0
     }
 
-    private func polygonBounds(from pointsStr: String) -> CGRect {
-        let pairs = pointsStr.split(separator: " ").compactMap { pair -> CGPoint? in
+    private func parseRotateTransform(attrs: [String: String]) -> (angle: Double, center: CGPoint?)? {
+        guard let transform = attrs["transform"],
+              let open = transform.range(of: "rotate(") else { return nil }
+
+        let afterOpen = transform[open.upperBound...]
+        guard let close = afterOpen.firstIndex(of: ")") else { return nil }
+        let content = afterOpen[..<close]
+        let values = content
+            .split { $0 == " " || $0 == "," || $0 == "\t" || $0 == "\n" }
+            .compactMap { Double($0) }
+        guard let angle = values.first else { return nil }
+
+        let center: CGPoint?
+        if values.count >= 3 {
+            center = CGPoint(x: CGFloat(values[1]), y: CGFloat(values[2]))
+        } else {
+            center = nil
+        }
+        return (angle, center)
+    }
+
+    private func rotatePoint(_ point: CGPoint, byDegrees degrees: Double, around center: CGPoint) -> CGPoint {
+        let radians = degrees * Double.pi / 180
+        let dx = point.x - center.x
+        let dy = point.y - center.y
+        let cosA = CGFloat(cos(radians))
+        let sinA = CGFloat(sin(radians))
+        return CGPoint(x: center.x + dx * cosA - dy * sinA,
+                       y: center.y + dx * sinA + dy * cosA)
+    }
+
+    private func polygonPoints(from pointsStr: String) -> [CGPoint] {
+        pointsStr.split(separator: " ").compactMap { pair -> CGPoint? in
             let xy = pair.split(separator: ",")
             guard xy.count == 2, let x = Double(xy[0]), let y = Double(xy[1]) else { return nil }
             return CGPoint(x: x, y: y)
         }
-        guard !pairs.isEmpty else { return .zero }
-        let xs = pairs.map(\.x), ys = pairs.map(\.y)
+    }
+
+    private func polygonBounds(from points: [CGPoint]) -> CGRect {
+        guard !points.isEmpty else { return .zero }
+        let xs = points.map(\.x), ys = points.map(\.y)
         let minX = xs.min()!, minY = ys.min()!, maxX = xs.max()!, maxY = ys.max()!
         return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }

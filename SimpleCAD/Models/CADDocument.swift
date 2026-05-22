@@ -13,6 +13,8 @@ struct HistoryEntry: Identifiable {
 // MARK: - CADDocument
 
 class CADDocument: ObservableObject {
+    private static let recentFilesDefaultsKey = "SimpleCAD.recentFiles"
+    private static let maxRecentFiles = 10
 
     // MARK: - State
 
@@ -45,6 +47,7 @@ class CADDocument: ObservableObject {
     private var preMoveShapes: [CADShape]? = nil
     private var preRotationShapes: [CADShape]? = nil
     private var preResizeShapes: [CADShape]? = nil
+    private var prePointEditShapes: [CADShape]? = nil
     private let importContentMargin: CGFloat = 400
 
     var canUndo: Bool { historyIndex > 0 }
@@ -52,12 +55,14 @@ class CADDocument: ObservableObject {
 
     // MARK: - Other state
 
-    var currentFileURL: URL?
+    @Published var currentFileURL: URL?
+    @Published private(set) var recentFileURLs: [URL] = []
     private var counters: [ShapeType: Int] = [:]
 
     // MARK: - Init
 
     init() {
+        recentFileURLs = Self.loadRecentFileURLs()
         historyEntries = [HistoryEntry(label: "Nouveau document", shapes: [])]
         historyIndex   = 0
     }
@@ -65,6 +70,13 @@ class CADDocument: ObservableObject {
     // MARK: - Derived
 
     var selectedShapes: [CADShape] { shapes.filter { selectedIDs.contains($0.id) } }
+
+    var contentBounds: CGRect? { boundingRect(for: shapes) }
+
+    var rulerOrigin: CGPoint {
+        guard let bounds = contentBounds?.standardized else { return .zero }
+        return CGPoint(x: bounds.minX, y: bounds.minY)
+    }
 
     // MARK: - Naming
 
@@ -184,8 +196,7 @@ class CADDocument: ObservableObject {
     func moveSelectedShapes(by delta: CGSize) {
         for id in selectedIDs {
             guard let i = shapes.firstIndex(where: { $0.id == id }) else { continue }
-            shapes[i].bounds.origin.x += delta.width
-            shapes[i].bounds.origin.y += delta.height
+            shapes[i].translate(by: delta)
         }
         isDirty = true
         // Pas de recordAction ici : géré par beginMove/commitMove
@@ -197,7 +208,9 @@ class CADDocument: ObservableObject {
                   let i = shapes.firstIndex(where: { $0.id == id })
             else { continue }
 
-            shapes[i].bounds = base.bounds.offsetBy(dx: delta.width, dy: delta.height)
+            var moved = base
+            moved.translate(by: delta)
+            shapes[i] = moved
         }
         isDirty = true
         // Pas de recordAction ici : géré par beginMove/commitMove
@@ -209,7 +222,7 @@ class CADDocument: ObservableObject {
 
     func resizeShape(id: UUID, to bounds: CGRect) {
         guard let i = shapes.firstIndex(where: { $0.id == id }) else { return }
-        shapes[i].bounds = bounds
+        shapes[i].resize(to: bounds)
         isDirty = true
     }
 
@@ -221,6 +234,22 @@ class CADDocument: ObservableObject {
             return old.bounds != shape.bounds
         }
         if resized { recordAction("Transformation") }
+    }
+
+    func beginPointEdit() {
+        if prePointEditShapes == nil { prePointEditShapes = shapes }
+    }
+
+    func replaceShapeDuringPointEdit(_ shape: CADShape) {
+        guard let i = shapes.firstIndex(where: { $0.id == shape.id }) else { return }
+        shapes[i] = shape
+        isDirty = true
+    }
+
+    func commitPointEdit() {
+        guard let pre = prePointEditShapes else { return }
+        prePointEditShapes = nil
+        if pre != shapes { recordAction("Modification points") }
     }
 
     func renameShape(id: UUID, to newName: String) {
@@ -358,8 +387,34 @@ class CADDocument: ObservableObject {
         } catch { }
     }
 
+    func openRecent(_ url: URL) {
+        let standardizedURL = url.standardizedFileURL
+
+        guard FileManager.default.fileExists(atPath: standardizedURL.path) else {
+            removeRecentFile(standardizedURL)
+            showMissingRecentFileAlert(for: standardizedURL)
+            return
+        }
+
+        do {
+            let result = try SVGService.load(from: standardizedURL)
+            applyLoadResult(result, url: standardizedURL)
+        } catch {
+            NSAlert(error: error).runModal()
+        }
+    }
+
+    func clearRecentFiles() {
+        recentFileURLs = []
+        persistRecentFileURLs()
+        NSDocumentController.shared.clearRecentDocuments(nil)
+    }
+
     private func applyLoadResult(_ result: SVGLoadResult, url: URL) {
-        let centeredContent = centerLoadedContent(result.shapes, in: result.canvasSize)
+        let centeredContent = centerLoadedContent(
+            result.shapes,
+            in: result.virtualCanvasSize ?? result.canvasSize
+        )
 
         shapes = centeredContent.shapes
         counters = result.counters
@@ -373,16 +428,23 @@ class CADDocument: ObservableObject {
         scrollTarget = centeredContent.bounds.map { CGPoint(x: $0.midX, y: $0.midY) }
             ?? CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
         zoomToFitBounds = centeredContent.bounds
+        registerRecentFile(url)
     }
 
     private func centerLoadedContent(_ loadedShapes: [CADShape], in loadedCanvasSize: CGSize) -> (shapes: [CADShape], bounds: CGRect?, canvasSize: CGSize) {
         guard let contentBounds = boundingRect(for: loadedShapes) else {
-            return (loadedShapes, nil, loadedCanvasSize)
+            let canvasSize = CGSize(width: max(Self.defaultCanvasSize.width, loadedCanvasSize.width),
+                                    height: max(Self.defaultCanvasSize.height, loadedCanvasSize.height))
+            return (loadedShapes, nil, canvasSize)
         }
 
         let canvasSize = CGSize(
-            width: max(loadedCanvasSize.width, contentBounds.width + importContentMargin * 2),
-            height: max(loadedCanvasSize.height, contentBounds.height + importContentMargin * 2)
+            width: max(Self.defaultCanvasSize.width,
+                       loadedCanvasSize.width,
+                       contentBounds.width + importContentMargin * 2),
+            height: max(Self.defaultCanvasSize.height,
+                        loadedCanvasSize.height,
+                        contentBounds.height + importContentMargin * 2)
         )
         let targetCenter = CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
         let delta = CGSize(width: targetCenter.x - contentBounds.midX,
@@ -390,7 +452,7 @@ class CADDocument: ObservableObject {
 
         let centeredShapes = loadedShapes.map { shape in
             var adjusted = shape
-            adjusted.bounds = adjusted.bounds.offsetBy(dx: delta.width, dy: delta.height)
+            adjusted.translate(by: delta)
             return adjusted
         }
 
@@ -413,8 +475,54 @@ class CADDocument: ObservableObject {
         do {
             try SVGService.save(document: self, to: url)
             isDirty = false
+            registerRecentFile(url)
         } catch {
             NSAlert(error: error).runModal()
         }
+    }
+
+    private static func loadRecentFileURLs() -> [URL] {
+        let paths = UserDefaults.standard.stringArray(forKey: recentFilesDefaultsKey) ?? []
+        var seen: Set<String> = []
+
+        return paths.compactMap { path in
+            guard !path.isEmpty else { return nil }
+            let url = URL(fileURLWithPath: path).standardizedFileURL
+            guard seen.insert(url.path).inserted else { return nil }
+            return url
+        }
+    }
+
+    private func registerRecentFile(_ url: URL) {
+        let standardizedURL = url.standardizedFileURL
+
+        recentFileURLs.removeAll { $0.standardizedFileURL.path == standardizedURL.path }
+        recentFileURLs.insert(standardizedURL, at: 0)
+
+        if recentFileURLs.count > Self.maxRecentFiles {
+            recentFileURLs = Array(recentFileURLs.prefix(Self.maxRecentFiles))
+        }
+
+        persistRecentFileURLs()
+        NSDocumentController.shared.noteNewRecentDocumentURL(standardizedURL)
+    }
+
+    private func removeRecentFile(_ url: URL) {
+        let standardizedPath = url.standardizedFileURL.path
+        recentFileURLs.removeAll { $0.standardizedFileURL.path == standardizedPath }
+        persistRecentFileURLs()
+    }
+
+    private func persistRecentFileURLs() {
+        let paths = recentFileURLs.map { $0.standardizedFileURL.path }
+        UserDefaults.standard.set(paths, forKey: Self.recentFilesDefaultsKey)
+    }
+
+    private func showMissingRecentFileAlert(for url: URL) {
+        let alert = NSAlert()
+        alert.messageText = "Fichier récent introuvable"
+        alert.informativeText = "Le fichier « \(url.lastPathComponent) » n'est plus disponible à son emplacement d'origine."
+        alert.alertStyle = .warning
+        alert.runModal()
     }
 }

@@ -20,6 +20,8 @@ enum WindowTabPolicy {
 
     static func configure(_ window: NSWindow) {
         window.tabbingMode = .disallowed
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = false
         removeTabCommandsFromMainMenu()
     }
 

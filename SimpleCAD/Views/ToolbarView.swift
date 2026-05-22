@@ -45,14 +45,16 @@ struct ToolbarView: View {
 
     private var toolGroup: some View {
         VStack(spacing: 4) {
-            // Outil sélection (pleine largeur)
-            ToolButton(tool: .select, isSelected: document.currentTool == .select, shortcut: "V") { activate(.select) }
+            HStack(spacing: 4) {
+                ToolButton(tool: .select, isSelected: document.currentTool == .select, shortcut: "V") { activate(.select) }
+                ToolButton(tool: .pointSelect, isSelected: document.currentTool == .pointSelect, shortcut: "A") { activate(.pointSelect) }
+            }
 
             Divider().padding(.horizontal, 8).padding(.vertical, 2)
 
             // Formes en grille 2 colonnes
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 4) {
-                ForEach([Tool.rectangle, .square, .circle, .ellipse, .triangle, .line]) { tool in
+                ForEach([Tool.rectangle, .ellipse, .triangle, .line]) { tool in
                     ToolButton(tool: tool, isSelected: document.currentTool == tool, shortcut: toolShortcut(tool)) {
                         activate(tool)
                     }
@@ -65,13 +67,15 @@ struct ToolbarView: View {
 
     private func activate(_ tool: Tool) {
         document.currentTool = tool
-        document.deselectAll()
+        if tool.shapeType != nil {
+            document.deselectAll()
+        }
     }
 
     private func toolShortcut(_ tool: Tool) -> String {
         switch tool {
-        case .select: return "V"; case .rectangle: return "R"; case .square: return "Q"
-        case .circle: return "C"; case .ellipse:   return "E"; case .triangle: return "T"
+        case .select: return "V"; case .pointSelect: return "A"; case .rectangle: return "R"; case .ellipse: return "E"
+        case .triangle: return "T"
         case .line:   return "L"
         }
     }
@@ -167,9 +171,7 @@ private struct ToolButton: View {
     var body: some View {
         Button(action: action) {
             VStack(spacing: 5) {
-                Image(systemName: tool.sfSymbol)
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundColor(isSelected ? .white : .primary)
+                toolIcon
                 Text(shortcut)
                     .font(.system(size: 9, weight: .medium, design: .monospaced))
                     .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
@@ -187,6 +189,13 @@ private struct ToolButton: View {
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
         .help("\(tool.rawValue) (\(shortcut))")
+    }
+
+    @ViewBuilder
+    private var toolIcon: some View {
+        Image(systemName: tool.sfSymbol)
+            .font(.system(size: 20, weight: .medium))
+            .foregroundColor(isSelected ? .white : .primary)
     }
 }
 

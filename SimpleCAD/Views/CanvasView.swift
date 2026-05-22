@@ -16,6 +16,7 @@ final class CADCanvasView: NSView {
     private var isDrawing   = false
     private var drawStart   = CGPoint.zero
     private var currentRect = CGRect.zero
+    private var currentRotationAngle: Double = 0
 
     // MARK: - Selection drag state
 
@@ -105,6 +106,22 @@ final class CADCanvasView: NSView {
     private var resizingHandle: ResizeHandle?
     private var resizeStartShape: CADShape?
 
+    // MARK: - Point editing state
+
+    private struct PointHandleKey: Hashable {
+        var shapeID: UUID
+        var pointIndex: Int
+    }
+
+    private struct PointEditTarget {
+        var shapeID: UUID
+        var pointIndex: Int
+    }
+
+    private var pointHandleRects: [PointHandleKey: CGRect] = [:]
+    private var isEditingPoint = false
+    private var pointEditTarget: PointEditTarget?
+
     // MARK: - Pan state (espace + glisser)
 
     private var isSpaceDown  = false
@@ -147,6 +164,14 @@ final class CADCanvasView: NSView {
         var guides: [ConstructionGuide]
     }
 
+    private struct RotationHandleGeometry {
+        var anchor: CGPoint
+        var center: CGPoint
+        var labelPoint: CGPoint
+        var handleRect: CGRect
+        var connectorEnd: CGPoint
+    }
+
     private var activeConstructionGuides: [ConstructionGuide] = []
 
     // MARK: - Inline dimension editor
@@ -159,6 +184,7 @@ final class CADCanvasView: NSView {
     // MARK: - Constants
 
     private let handleSize:  CGFloat = 7
+    private let pointHandleSize: CGFloat = 8
     private let dimOffset:   CGFloat = 28  // px from shape edge to dim line
     private let dimExtend:   CGFloat = 6   // extension line overshoot
     private let rotationHandleSize: CGFloat = 18
@@ -281,13 +307,14 @@ final class CADCanvasView: NSView {
 
         if !activeConstructionGuides.isEmpty { drawConstructionGuides(ctx: ctx) }
 
-        if isDrawing, document.currentTool != .select { drawPreview(ctx: ctx) }
+        if isDrawing, document.currentTool.shapeType != nil { drawPreview(ctx: ctx) }
 
         // Reset hit rects each frame
         widthHitRects.removeAll()
         heightHitRects.removeAll()
         rotationHandleRects.removeAll()
         resizeHandleRects.removeAll()
+        pointHandleRects.removeAll()
 
         for shape in document.shapes where shouldDrawDimensions(for: shape) && !document.selectedIDs.contains(shape.id) {
             drawDimensions(shape, ctx: ctx)
@@ -296,8 +323,12 @@ final class CADCanvasView: NSView {
         for shape in document.shapes where document.selectedIDs.contains(shape.id) {
             drawSelectionBorder(shape, ctx: ctx)
             if shouldDrawDimensions(for: shape) { drawDimensions(shape, ctx: ctx) }
-            drawHandles(shape, ctx: ctx)
-            drawRotationHandle(shape, ctx: ctx)
+            if document.currentTool == .pointSelect {
+                drawPointHandles(shape, ctx: ctx)
+            } else {
+                drawHandles(shape, ctx: ctx)
+                drawRotationHandle(shape, ctx: ctx)
+            }
         }
 
         if isMarqueeSelecting { drawSelectionMarquee(ctx: ctx) }
@@ -313,10 +344,19 @@ final class CADCanvasView: NSView {
         ctx.saveGState()
         ctx.setStrokeColor(gridColor.cgColor)
         ctx.setLineWidth(document.gridDisplayMode == .wide ? 0.65 : 0.5)
-        var x: CGFloat = 0
-        while x <= bounds.width  { ctx.move(to: CGPoint(x: x, y: 0)); ctx.addLine(to: CGPoint(x: x, y: bounds.height)); x += gridSpacing }
-        var y: CGFloat = 0
-        while y <= bounds.height { ctx.move(to: CGPoint(x: 0, y: y)); ctx.addLine(to: CGPoint(x: bounds.width, y: y));  y += gridSpacing }
+        let origin = document.rulerOrigin
+        var x = origin.x + floor((bounds.minX - origin.x) / gridSpacing) * gridSpacing
+        while x <= bounds.maxX {
+            ctx.move(to: CGPoint(x: x, y: bounds.minY))
+            ctx.addLine(to: CGPoint(x: x, y: bounds.maxY))
+            x += gridSpacing
+        }
+        var y = origin.y + floor((bounds.minY - origin.y) / gridSpacing) * gridSpacing
+        while y <= bounds.maxY {
+            ctx.move(to: CGPoint(x: bounds.minX, y: y))
+            ctx.addLine(to: CGPoint(x: bounds.maxX, y: y))
+            y += gridSpacing
+        }
         ctx.strokePath()
         ctx.restoreGState()
     }
@@ -340,7 +380,8 @@ final class CADCanvasView: NSView {
         let preview = CADShape(type: shapeType, bounds: currentRect, name: "",
                                fillColor: document.fillColor.withAlpha(0.35),
                                strokeColor: document.strokeColor,
-                               strokeWidth: document.strokeWidth)
+                               strokeWidth: document.strokeWidth,
+                               rotationAngle: currentRotationAngle)
         drawShape(preview, ctx: ctx)
     }
 
@@ -428,6 +469,33 @@ final class CADCanvasView: NSView {
         resizeHandleRects[shape.id] = hitRects
     }
 
+    private func drawPointHandles(_ shape: CADShape, ctx: CGContext) {
+        let points = shape.editablePoints()
+        guard !points.isEmpty else { return }
+
+        ctx.saveGState()
+        let hs = pointHandleSize * invZoom
+
+        for (index, point) in points.enumerated() {
+            let rect = CGRect(x: point.x - hs / 2,
+                              y: point.y - hs / 2,
+                              width: hs,
+                              height: hs)
+            overlayFillColor.setFill()
+            NSBezierPath(ovalIn: rect).fill()
+
+            let outline = NSBezierPath(ovalIn: rect)
+            outline.lineWidth = 1.6 * invZoom
+            NSColor.systemBlue.setStroke()
+            outline.stroke()
+
+            let key = PointHandleKey(shapeID: shape.id, pointIndex: index)
+            pointHandleRects[key] = rect.insetBy(dx: -6 * invZoom, dy: -6 * invZoom)
+        }
+
+        ctx.restoreGState()
+    }
+
     // MARK: - Dimension annotations
 
     private func shouldDrawDimensions(for shape: CADShape) -> Bool {
@@ -443,6 +511,14 @@ final class CADCanvasView: NSView {
 
     private func drawDimensions(_ shape: CADShape, ctx: CGContext) {
         let b = shape.bounds.standardized
+        if shape.type == .line {
+            drawLineDimensions(shape, bounds: b, ctx: ctx)
+            return
+        }
+        if shape.type == .circle || shape.type == .ellipse {
+            drawRoundShapeDimensions(shape, bounds: b, ctx: ctx)
+            return
+        }
         guard b.width > 4, b.height > 4 else { return }
 
         ctx.saveGState()
@@ -502,26 +578,129 @@ final class CADCanvasView: NSView {
         ctx.restoreGState()
     }
 
-    private func drawRotationHandle(_ shape: CADShape, ctx: CGContext) {
-        let b = shape.visualBounds
+    private func drawRoundShapeDimensions(_ shape: CADShape, bounds b: CGRect, ctx: CGContext) {
         guard b.width > 4, b.height > 4 else { return }
 
         ctx.saveGState()
         let z = invZoom
-        let size = rotationHandleSize * z
-        let center = CGPoint(x: b.midX, y: b.minY - rotationHandleOffset * z)
-        let handleRect = CGRect(x: center.x - size/2, y: center.y - size/2,
-                                width: size, height: size)
+        let color = NSColor.systemBlue.withAlphaComponent(0.85)
+        color.setStroke()
+        color.setFill()
+        ctx.setLineWidth(1.0 * z)
+
+        let center = shape.center
+        let xAxis = rotatedUnitX(byDegrees: shape.rotationAngle)
+        let yAxis = rotatedUnitY(byDegrees: shape.rotationAngle)
+        let left = offsetPoint(center, along: xAxis, by: -b.width / 2)
+        let right = offsetPoint(center, along: xAxis, by: b.width / 2)
+
+        strokeLine(ctx, left, right)
+        drawArrow(ctx, at: left, direction: xAxis)
+        drawArrow(ctx, at: right, direction: reversed(xAxis))
+
+        let circleLike = isCircleLike(b)
+        let wLabelCenter: CGPoint
+        if circleLike {
+            wLabelCenter = offsetPoint(center, along: yAxis, by: -14 * z)
+        } else {
+            let shifted = offsetPoint(center, along: xAxis, by: -diameterLabelShift(for: b.width))
+            wLabelCenter = offsetPoint(shifted, along: yAxis, by: 20 * z)
+        }
+        widthHitRects[shape.id] = drawDimensionLabel(
+            diameterLabel(for: b.width),
+            at: wLabelCenter,
+            angleDegrees: readableLabelAngle(shape.rotationAngle),
+            color: color,
+            highlighted: editingShapeID == shape.id && editingAxis == .width
+        )
+
+        if !circleLike {
+            let top = offsetPoint(center, along: yAxis, by: -b.height / 2)
+            let bottom = offsetPoint(center, along: yAxis, by: b.height / 2)
+
+            strokeLine(ctx, top, bottom)
+            drawArrow(ctx, at: top, direction: yAxis)
+            drawArrow(ctx, at: bottom, direction: reversed(yAxis))
+
+            let shifted = offsetPoint(center, along: yAxis, by: -diameterLabelShift(for: b.height))
+            let hLabelCenter = offsetPoint(shifted, along: xAxis, by: 30 * z)
+            heightHitRects[shape.id] = drawDimensionLabel(
+                diameterLabel(for: b.height),
+                at: hLabelCenter,
+                angleDegrees: readableLabelAngle(shape.rotationAngle - 90),
+                color: color,
+                highlighted: editingShapeID == shape.id && editingAxis == .height
+            )
+        }
+
+        ctx.restoreGState()
+    }
+
+    private func isCircleLike(_ bounds: CGRect) -> Bool {
+        abs(bounds.width - bounds.height) <= max(1 * invZoom, 0.5)
+    }
+
+    private func diameterLabelShift(for length: CGFloat) -> CGFloat {
+        let z = invZoom
+        return min(max(length * 0.24, 18 * z), max(length / 2 - 8 * z, 0))
+    }
+
+    private func diameterLabel(for value: CGFloat) -> String {
+        "Ø \(document.unit.format(Double(value)))"
+    }
+
+    private func drawLineDimensions(_ shape: CADShape, bounds b: CGRect, ctx: CGContext) {
+        guard b.width > 4, let endpoints = shape.lineEndpoints else { return }
+
+        ctx.saveGState()
+        let z = invZoom
+        let color = NSColor.systemBlue.withAlphaComponent(0.85)
+        color.setStroke()
+        color.setFill()
+        ctx.setLineWidth(1.0 * z)
+
+        let xAxis = rotatedUnitX(byDegrees: shape.rotationAngle)
+        let yAxis = rotatedUnitY(byDegrees: shape.rotationAngle)
+        let offset = dimOffset * z
+        let extend = dimExtend * z
+        let start = endpoints.start
+        let end = endpoints.end
+        let dStart = offsetPoint(start, along: yAxis, by: offset)
+        let dEnd = offsetPoint(end, along: yAxis, by: offset)
+
+        strokeLine(ctx, dStart, dEnd)
+        strokeLine(ctx, start, offsetPoint(start, along: yAxis, by: offset + extend))
+        strokeLine(ctx, end, offsetPoint(end, along: yAxis, by: offset + extend))
+        drawArrow(ctx, at: dStart, direction: xAxis)
+        drawArrow(ctx, at: dEnd, direction: reversed(xAxis))
+
+        let label = document.unit.format(Double(b.width))
+        let labelCenter = offsetPoint(midpoint(dStart, dEnd), along: yAxis, by: 5 * z)
+        widthHitRects[shape.id] = drawDimensionLabel(
+            label,
+            at: labelCenter,
+            angleDegrees: readableLabelAngle(shape.rotationAngle),
+            color: color,
+            highlighted: editingShapeID == shape.id && editingAxis == .width
+        )
+
+        ctx.restoreGState()
+    }
+
+    private func drawRotationHandle(_ shape: CADShape, ctx: CGContext) {
+        guard let geometry = rotationHandleGeometry(for: shape) else { return }
+
+        ctx.saveGState()
+        let z = invZoom
 
         let color = NSColor.systemBlue.withAlphaComponent(0.9)
         color.setStroke()
         ctx.setLineWidth(1.2 * z)
-        strokeLine(ctx, CGPoint(x: b.midX, y: b.minY),
-                   CGPoint(x: center.x, y: center.y + size/2))
+        strokeLine(ctx, geometry.anchor, geometry.connectorEnd)
 
         overlayFillColor.setFill()
-        NSBezierPath(ovalIn: handleRect).fill()
-        let ring = NSBezierPath(ovalIn: handleRect)
+        NSBezierPath(ovalIn: geometry.handleRect).fill()
+        let ring = NSBezierPath(ovalIn: geometry.handleRect)
         ring.lineWidth = 1.5 * z
         color.setStroke()
         ring.stroke()
@@ -532,18 +711,47 @@ final class CADCanvasView: NSView {
         ]
         let glyph = NSAttributedString(string: "↻", attributes: glyphAttrs)
         let glyphSize = glyph.size()
-        glyph.draw(at: CGPoint(x: center.x - glyphSize.width/2,
-                               y: center.y - glyphSize.height/2))
+        glyph.draw(at: CGPoint(x: geometry.center.x - glyphSize.width/2,
+                               y: geometry.center.y - glyphSize.height/2))
 
         let angle = Int(round(shape.rotationAngle))
         if angle != 0 {
             drawLabel("\(angle)°",
-                      at: CGPoint(x: center.x + 26 * z, y: center.y),
+                      at: geometry.labelPoint,
                       color: color)
         }
 
-        rotationHandleRects[shape.id] = handleRect.insetBy(dx: -5 * z, dy: -5 * z)
+        rotationHandleRects[shape.id] = rotationHandleHitRect(for: shape)
         ctx.restoreGState()
+    }
+
+    private func rotationHandleGeometry(for shape: CADShape) -> RotationHandleGeometry? {
+        let b = shape.bounds.standardized
+        guard b.width > 4, b.height > 4 else { return nil }
+
+        let z = invZoom
+        let size = rotationHandleSize * z
+        let xAxis = rotatedUnitX(byDegrees: shape.rotationAngle)
+        let yAxis = rotatedUnitY(byDegrees: shape.rotationAngle)
+        let anchor = rotatePoint(CGPoint(x: b.midX, y: b.minY),
+                                 byDegrees: shape.rotationAngle,
+                                 around: shape.center)
+        let center = offsetPoint(anchor, along: yAxis, by: -rotationHandleOffset * z)
+        let handleRect = CGRect(x: center.x - size / 2,
+                                y: center.y - size / 2,
+                                width: size,
+                                height: size)
+        return RotationHandleGeometry(
+            anchor: anchor,
+            center: center,
+            labelPoint: offsetPoint(center, along: xAxis, by: 26 * z),
+            handleRect: handleRect,
+            connectorEnd: offsetPoint(center, along: yAxis, by: size / 2)
+        )
+    }
+
+    private func rotationHandleHitRect(for shape: CADShape) -> CGRect? {
+        rotationHandleGeometry(for: shape)?.handleRect.insetBy(dx: -5 * invZoom, dy: -5 * invZoom)
     }
 
     private func drawDimensionLabel(_ text: String,
@@ -630,11 +838,13 @@ final class CADCanvasView: NSView {
         let z = invZoom
         let majorStep = rulerMajorStepPixels()
         let minorStep = max(majorStep / rulerMinorDivisions, 1)
-        var value = floor(visible.minX / minorStep) * minorStep
+        let originX = document.rulerOrigin.x
+        var value = originX + floor((visible.minX - originX) / minorStep) * minorStep
 
         while value <= visible.maxX + minorStep {
-            let majorRatio = value / majorStep
-            let midRatio = value / (majorStep / 2)
+            let relativeValue = value - originX
+            let majorRatio = relativeValue / majorStep
+            let midRatio = relativeValue / (majorStep / 2)
             let isMajor = abs(majorRatio.rounded() - majorRatio) < 0.001
             let isMid = !isMajor && abs(midRatio.rounded() - midRatio) < 0.001
             let tickLength = rect.height * (isMajor ? 0.55 : (isMid ? 0.38 : 0.24))
@@ -648,7 +858,7 @@ final class CADCanvasView: NSView {
             tick.stroke()
 
             if isMajor {
-                drawRulerLabel(document.unit.formatValue(Double(value)),
+                drawRulerLabel(document.unit.formatValue(Double(rulerLabelValue(relativeValue))),
                                at: CGPoint(x: value + 4 * z, y: rect.minY + 1.5 * z),
                                vertical: false)
             }
@@ -661,11 +871,13 @@ final class CADCanvasView: NSView {
         let z = invZoom
         let majorStep = rulerMajorStepPixels()
         let minorStep = max(majorStep / rulerMinorDivisions, 1)
-        var value = floor(visible.minY / minorStep) * minorStep
+        let originY = document.rulerOrigin.y
+        var value = originY + floor((visible.minY - originY) / minorStep) * minorStep
 
         while value <= visible.maxY + minorStep {
-            let majorRatio = value / majorStep
-            let midRatio = value / (majorStep / 2)
+            let relativeValue = value - originY
+            let majorRatio = relativeValue / majorStep
+            let midRatio = relativeValue / (majorStep / 2)
             let isMajor = abs(majorRatio.rounded() - majorRatio) < 0.001
             let isMid = !isMajor && abs(midRatio.rounded() - midRatio) < 0.001
             let tickLength = rect.width * (isMajor ? 0.55 : (isMid ? 0.38 : 0.24))
@@ -679,7 +891,7 @@ final class CADCanvasView: NSView {
             tick.stroke()
 
             if isMajor {
-                drawRulerLabel(document.unit.formatValue(Double(value)),
+                drawRulerLabel(document.unit.formatValue(Double(rulerLabelValue(relativeValue))),
                                at: CGPoint(x: rect.midX, y: value + 4 * z),
                                vertical: true)
             }
@@ -703,6 +915,10 @@ final class CADCanvasView: NSView {
         if fraction <= 2 { return 2 * base }
         if fraction <= 5 { return 5 * base }
         return 10 * base
+    }
+
+    private func rulerLabelValue(_ value: CGFloat) -> CGFloat {
+        abs(value) < 0.0001 ? 0 : value
     }
 
     private func drawRulerLabel(_ text: String, at point: CGPoint, vertical: Bool) {
@@ -809,6 +1025,23 @@ final class CADCanvasView: NSView {
         atan2(Double(point.y - center.y), Double(point.x - center.x)) * 180 / Double.pi
     }
 
+    private func constrainedLineEnd(from start: CGPoint,
+                                    to point: CGPoint,
+                                    snapTo45Degrees: Bool) -> CGPoint {
+        guard snapTo45Degrees else { return point }
+
+        let dx = point.x - start.x
+        let dy = point.y - start.y
+        let length = sqrt(dx * dx + dy * dy)
+        guard length > 0 else { return point }
+
+        let step = Double.pi / 4
+        let angle = atan2(Double(dy), Double(dx))
+        let snappedAngle = (angle / step).rounded() * step
+        return CGPoint(x: start.x + CGFloat(cos(snappedAngle)) * length,
+                       y: start.y + CGFloat(sin(snappedAngle)) * length)
+    }
+
     private func resizedBounds(for shape: CADShape,
                                handle: ResizeHandle,
                                to point: CGPoint,
@@ -898,7 +1131,7 @@ final class CADCanvasView: NSView {
         document.shapes.compactMap { shape in
             guard document.selectedIDs.contains(shape.id),
                   var base = baseShapes[shape.id] else { return nil }
-            base.bounds = base.bounds.offsetBy(dx: delta.width, dy: delta.height)
+            base.translate(by: delta)
             return base
         }
     }
@@ -1137,10 +1370,12 @@ final class CADCanvasView: NSView {
         }
 
         let px = document.unit.toPixels(valueInUnit)
+        var newBounds = shape.bounds
         switch axis {
-        case .width:  shape.bounds.size.width  = CGFloat(px)
-        case .height: shape.bounds.size.height = CGFloat(px)
+        case .width:  newBounds.size.width  = CGFloat(px)
+        case .height: newBounds.size.height = CGFloat(px)
         }
+        shape.resize(to: newBounds)
 
         document.updateShape(shape)
         dismissDimensionEditor()
@@ -1162,6 +1397,11 @@ final class CADCanvasView: NSView {
         let pt = convert(event.locationInWindow, from: nil)
         if pointIsInRuler(pt) { return }
 
+        if document.currentTool == .pointSelect {
+            handlePointSelectDown(pt: pt, event: event)
+            return
+        }
+
         // ── Resize handle hit test ─────────────────────────────────
         if document.currentTool == .select,
            let resizeTarget = resizeHandle(at: pt) {
@@ -1171,7 +1411,8 @@ final class CADCanvasView: NSView {
 
         // ── Rotation handle hit test ────────────────────────────────
         for shape in document.shapes.reversed() where document.selectedIDs.contains(shape.id) {
-            if let r = rotationHandleRects[shape.id], r.contains(pt) {
+            if let r = rotationHandleRects[shape.id] ?? rotationHandleHitRect(for: shape),
+               r.contains(pt) {
                 startRotation(for: shape, at: pt)
                 return
             }
@@ -1194,16 +1435,25 @@ final class CADCanvasView: NSView {
 
         if document.currentTool == .select {
             handleSelectDown(pt: pt, event: event)
-        } else {
+        } else if document.currentTool.shapeType != nil {
             isDrawing = true
             drawStart = pt
             currentRect = .zero
+            currentRotationAngle = 0
         }
     }
 
     override func mouseDragged(with event: NSEvent) {
 
-        if isResizing {
+        if isEditingPoint {
+            let pt = convert(event.locationInWindow, from: nil)
+            updatePointEdit(to: pt, event: event)
+            return
+        }
+
+        if isEditingPoint {
+            addCursorRect(bounds, cursor: .closedHand)
+        } else if isResizing {
             let pt = convert(event.locationInWindow, from: nil)
             updateResize(to: pt, event: event)
             return
@@ -1247,23 +1497,40 @@ final class CADCanvasView: NSView {
             } else if isDragging, !document.selectedIDs.isEmpty {
                 updateShapeDrag(to: pt, event: event)
             }
-        } else if isDrawing {
-            var r = CGRect(
-                x: min(drawStart.x, pt.x), y: min(drawStart.y, pt.y),
-                width: abs(pt.x - drawStart.x), height: abs(pt.y - drawStart.y)
-            )
-            if document.currentTool.constrainedToSquare || event.modifierFlags.contains(.shift) {
-                let side = min(r.width, r.height)
-                r.origin.x = drawStart.x <= pt.x ? drawStart.x : drawStart.x - side
-                r.origin.y = drawStart.y <= pt.y ? drawStart.y : drawStart.y - side
-                r.size = CGSize(width: side, height: side)
+        } else if isDrawing, document.currentTool.shapeType != nil {
+            if document.currentTool == .line {
+                let end = constrainedLineEnd(from: drawStart,
+                                             to: pt,
+                                             snapTo45Degrees: event.modifierFlags.contains(.shift))
+                let geometry = CADShape.lineGeometry(from: drawStart,
+                                                     to: end,
+                                                     strokeWidth: document.strokeWidth)
+                currentRect = geometry.bounds
+                currentRotationAngle = geometry.rotationAngle
+            } else {
+                var r = CGRect(
+                    x: min(drawStart.x, pt.x), y: min(drawStart.y, pt.y),
+                    width: abs(pt.x - drawStart.x), height: abs(pt.y - drawStart.y)
+                )
+                if document.currentTool.constrainedToSquare || event.modifierFlags.contains(.shift) {
+                    let side = min(r.width, r.height)
+                    r.origin.x = drawStart.x <= pt.x ? drawStart.x : drawStart.x - side
+                    r.origin.y = drawStart.y <= pt.y ? drawStart.y : drawStart.y - side
+                    r.size = CGSize(width: side, height: side)
+                }
+                currentRect = r
+                currentRotationAngle = 0
             }
-            currentRect = r
             needsDisplay = true
         }
     }
 
     override func mouseUp(with event: NSEvent) {
+        if isEditingPoint {
+            finishPointEdit()
+            return
+        }
+
         if isResizing {
             finishResize()
             return
@@ -1287,9 +1554,19 @@ final class CADCanvasView: NSView {
             } else {
                 finishShapeDrag()
             }
-        } else if isDrawing {
+        } else if isDrawing, document.currentTool.shapeType != nil {
             isDrawing = false
-            if currentRect.width > 4, currentRect.height > 4 {
+            if document.currentTool == .line, currentRect.width > 4 {
+                let type = document.currentTool.shapeType!
+                let shape = CADShape(type: type, bounds: currentRect,
+                                     name: document.nextName(for: type),
+                                     fillColor: document.fillColor,
+                                     strokeColor: document.strokeColor,
+                                     strokeWidth: document.strokeWidth,
+                                     rotationAngle: currentRotationAngle)
+                document.addShape(shape)
+                document.selectShape(id: shape.id)
+            } else if currentRect.width > 4, currentRect.height > 4 {
                 let type = document.currentTool.shapeType!
                 let shape = CADShape(type: type, bounds: currentRect,
                                      name: document.nextName(for: type),
@@ -1300,6 +1577,7 @@ final class CADCanvasView: NSView {
                 document.selectShape(id: shape.id)
             }
             currentRect = .zero
+            currentRotationAngle = 0
             needsDisplay = true
         }
     }
@@ -1315,6 +1593,83 @@ final class CADCanvasView: NSView {
         } else {
             startSelectionMarquee(at: pt, additive: event.modifierFlags.contains(.shift))
         }
+        needsDisplay = true
+    }
+
+    private func handlePointSelectDown(pt: CGPoint, event: NSEvent) {
+        if dimensionEditor != nil { dismissDimensionEditor() }
+
+        if let target = pointHandle(at: pt) {
+            document.selectShape(id: target.shape.id)
+            startPointEdit(shape: target.shape, pointIndex: target.pointIndex)
+            return
+        }
+
+        if let shape = document.shapes.reversed().first(where: { $0.contains(pt) }) {
+            document.selectShape(id: shape.id, additive: event.modifierFlags.contains(.shift))
+        } else if !event.modifierFlags.contains(.shift) {
+            document.deselectAll()
+        }
+
+        activeConstructionGuides = []
+        needsDisplay = true
+    }
+
+    private func pointHandle(at point: CGPoint) -> (shape: CADShape, pointIndex: Int)? {
+        for shape in document.shapes.reversed() {
+            let points = shape.editablePoints()
+            guard !points.isEmpty else { continue }
+
+            for index in points.indices {
+                let key = PointHandleKey(shapeID: shape.id, pointIndex: index)
+                let rect = pointHandleRects[key] ?? pointHandleRect(centeredAt: points[index])
+                if rect.contains(point) {
+                    return (shape, index)
+                }
+            }
+        }
+
+        return nil
+    }
+
+    private func pointHandleRect(centeredAt point: CGPoint) -> CGRect {
+        let hs = pointHandleSize * invZoom
+        return CGRect(x: point.x - hs / 2,
+                      y: point.y - hs / 2,
+                      width: hs,
+                      height: hs)
+            .insetBy(dx: -6 * invZoom, dy: -6 * invZoom)
+    }
+
+    private func startPointEdit(shape: CADShape, pointIndex: Int) {
+        isEditingPoint = true
+        pointEditTarget = PointEditTarget(shapeID: shape.id, pointIndex: pointIndex)
+        activeConstructionGuides = []
+        document.beginPointEdit()
+        NSCursor.closedHand.set()
+    }
+
+    private func updatePointEdit(to point: CGPoint, event: NSEvent) {
+        guard let target = pointEditTarget,
+              let shape = document.shapes.first(where: { $0.id == target.shapeID })
+        else { return }
+
+        let snap = event.modifierFlags.contains(.option)
+            ? (point: point, guides: [])
+            : snappedPoint(point, excluding: [target.shapeID])
+
+        guard let updated = shape.movingEditablePoint(at: target.pointIndex, to: snap.point) else { return }
+        document.replaceShapeDuringPointEdit(updated)
+        activeConstructionGuides = snap.guides
+        needsDisplay = true
+    }
+
+    private func finishPointEdit() {
+        document.commitPointEdit()
+        isEditingPoint = false
+        pointEditTarget = nil
+        activeConstructionGuides = []
+        window?.resetCursorRects()
         needsDisplay = true
     }
 
@@ -1587,7 +1942,7 @@ final class CADCanvasView: NSView {
         } else if isSpaceDown {
             addCursorRect(bounds, cursor: .openHand)
         } else {
-            addCursorRect(bounds, cursor: document.currentTool == .select ? .arrow : .crosshair)
+            addCursorRect(bounds, cursor: document.currentTool.shapeType == nil ? .arrow : .crosshair)
             if document.currentTool == .select {
                 for shape in document.shapes where document.selectedIDs.contains(shape.id) {
                     let rects = resizeHandleRects[shape.id] ?? calculatedResizeHandleRects(for: shape)
@@ -1597,8 +1952,19 @@ final class CADCanvasView: NSView {
                         }
                     }
                 }
-                for rect in rotationHandleRects.values {
-                    addCursorRect(rect, cursor: .openHand)
+                for shape in document.shapes where document.selectedIDs.contains(shape.id) {
+                    if let rect = rotationHandleRects[shape.id] ?? rotationHandleHitRect(for: shape) {
+                        addCursorRect(rect, cursor: .openHand)
+                    }
+                }
+            } else if document.currentTool == .pointSelect {
+                for shape in document.shapes where document.selectedIDs.contains(shape.id) {
+                    let points = shape.editablePoints()
+                    for index in points.indices {
+                        let key = PointHandleKey(shapeID: shape.id, pointIndex: index)
+                        let rect = pointHandleRects[key] ?? pointHandleRect(centeredAt: points[index])
+                        addCursorRect(rect, cursor: .openHand)
+                    }
                 }
             }
         }

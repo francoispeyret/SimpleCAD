@@ -2,76 +2,88 @@ import SwiftUI
 import AppKit
 
 private let toolbarLeftMargin: CGFloat = 42
-private let toolbarRightMargin: CGFloat = 6
+private let panelTopMargin: CGFloat = 16
+private let panelBottomMargin: CGFloat = 16
 private let sidebarWidth: CGFloat = 260
-private let trafficLightBackdropSize = CGSize(width: 80, height: 32)
+private let panelDragHandleHeight: CGFloat = 18
 
 struct ContentView: View {
     @EnvironmentObject var document: CADDocument
     @State private var keyboardMonitor: Any?
-    @State private var isFullScreen = false
+    @State private var isSidebarVisible = true
+    @State private var toolbarPosition: CGPoint?
+    @State private var sidebarPosition: CGPoint?
 
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .topLeading) {
+                WindowDocumentTitleBinder(
+                    fileURL: document.currentFileURL,
+                    isEdited: document.isDirty
+                )
+                .frame(width: 0, height: 0)
 
                 // ── Couche 0 : canvas plein écran ─────────────────
                 CanvasScrollView()
                     .frame(width: geo.size.width, height: geo.size.height)
 
-                // ── Couche 0.5 : fond des boutons de fenêtre ──────
-                if !isFullScreen {
-                    TrafficLightBackdrop()
-                        .frame(width: trafficLightBackdropSize.width,
-                               height: trafficLightBackdropSize.height)
-                        .padding(.top, 0)
-                        .padding(.leading, 0)
-                        .allowsHitTesting(false)
-                }
-
-                // ── Couche 1 : toolbar (bord gauche, verticale) ───
-                GlassEffectContainer {
-                    ToolbarView()
-                        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
-                }
-                .padding(.top, 44)
-                .padding(.leading, toolbarLeftMargin)
-                .padding(.trailing, toolbarRightMargin)
-                .frame(width: toolbarWidth + toolbarLeftMargin + toolbarRightMargin,
-                       alignment: .leading)
-
-                // ── Couche 2 : sidebar (bord droit) ──────────────
-                HStack(spacing: 0) {
-                    Spacer()
-                    GlassEffectContainer {
-                        SidebarView()
-                            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                // ── Couche 1 : bouton de masquage du panneau droit ───
+                SidebarVisibilityButton(isVisible: isSidebarVisible) {
+                    withAnimation(.spring(response: 0.24, dampingFraction: 0.86)) {
+                        if !isSidebarVisible {
+                            sidebarPosition = nil
+                        }
+                        toolbarPosition = nil
+                        isSidebarVisible.toggle()
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .padding(.top, 44)
-                    .padding(.leading, 6)
-                    .padding(.trailing, 28)
-                    .padding(.bottom, 28)
-                    .frame(width: sidebarWidth, height: geo.size.height)
                 }
-                .frame(width: geo.size.width, height: geo.size.height)
+                .position(sidebarTogglePosition(in: geo.size))
+                .zIndex(3)
+
+                // ── Couche 2 : toolbar flottante ───────────────────
+                FloatingPanel(
+                    position: $toolbarPosition,
+                    defaultPosition: defaultToolbarPosition(in: geo.size),
+                    panelSize: toolbarPanelSize,
+                    containerSize: geo.size
+                ) {
+                    GlassEffectContainer {
+                        VStack(spacing: 0) {
+                            FloatingPanelHandle()
+                            ToolbarView()
+                        }
+                        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                }
+                .zIndex(2)
+
+                // ── Couche 3 : sidebar flottante ───────────────────
+                if isSidebarVisible {
+                    FloatingPanel(
+                        position: $sidebarPosition,
+                        defaultPosition: defaultSidebarPosition(in: geo.size),
+                        panelSize: sidebarPanelSize(in: geo.size),
+                        containerSize: geo.size
+                    ) {
+                        GlassEffectContainer {
+                            VStack(spacing: 0) {
+                                FloatingPanelHandle()
+                                SidebarView()
+                            }
+                                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .zIndex(1)
+                }
             }
         }
-        .ignoresSafeArea(.all)
         .frame(minWidth: 960, minHeight: 680)
         .onAppear {
             maximiseWindow()
             setupKeyboardShortcuts()
-            updateFullScreenState()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { notification in
-            guard notification.object is NSWindow else { return }
-            isFullScreen = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { notification in
-            guard notification.object is NSWindow else { return }
-            isFullScreen = false
         }
         .onDisappear {
             if let keyboardMonitor {
@@ -92,10 +104,36 @@ struct ContentView: View {
         }
     }
 
-    private func updateFullScreenState() {
-        DispatchQueue.main.async {
-            isFullScreen = NSApp.windows.contains { $0.styleMask.contains(.fullScreen) }
-        }
+    private var toolbarPanelSize: CGSize {
+        CGSize(width: toolbarWidth, height: toolbarContentHeight + panelDragHandleHeight)
+    }
+
+    private func sidebarPanelSize(in containerSize: CGSize) -> CGSize {
+        CGSize(width: sidebarWidth, height: max(360, containerSize.height - panelTopMargin - panelBottomMargin))
+    }
+
+    private var toolbarContentHeight: CGFloat {
+        532
+    }
+
+    private func defaultToolbarPosition(in containerSize: CGSize) -> CGPoint {
+        CGPoint(x: toolbarLeftMargin, y: panelTopMargin)
+    }
+
+    private func defaultSidebarPosition(in containerSize: CGSize) -> CGPoint {
+        let size = sidebarPanelSize(in: containerSize)
+        return CGPoint(
+            x: max(12, containerSize.width - size.width - 28),
+            y: panelTopMargin
+        )
+    }
+
+    private func sidebarTogglePosition(in containerSize: CGSize) -> CGPoint {
+        let sidebar = sidebarPanelSize(in: containerSize)
+        let x = isSidebarVisible
+            ? max(72, containerSize.width - sidebar.width - 54)
+            : max(72, containerSize.width - 54)
+        return CGPoint(x: x, y: panelTopMargin + 17)
     }
 
     private func setupKeyboardShortcuts() {
@@ -106,7 +144,9 @@ struct ContentView: View {
             guard let tool = toolShortcut(for: event) else { return event }
 
             document.currentTool = tool
-            document.deselectAll()
+            if tool.shapeType != nil {
+                document.deselectAll()
+            }
             return nil
         }
     }
@@ -133,9 +173,8 @@ struct ContentView: View {
 
         switch key {
         case "v": return .select
+        case "a": return .pointSelect
         case "r": return .rectangle
-        case "q": return .square
-        case "c": return .circle
         case "e": return .ellipse
         case "t": return .triangle
         case "l": return .line
@@ -156,12 +195,247 @@ struct ContentView: View {
     }
 }
 
-// MARK: - TrafficLightBackdrop
+// MARK: - Floating Panels
 
-private struct TrafficLightBackdrop: View {
+private struct FloatingPanel<Content: View>: View {
+    @Binding var position: CGPoint?
+
+    let defaultPosition: CGPoint
+    let panelSize: CGSize
+    let containerSize: CGSize
+    let content: Content
+
+    @State private var dragStartPosition: CGPoint?
+
+    init(position: Binding<CGPoint?>,
+         defaultPosition: CGPoint,
+         panelSize: CGSize,
+         containerSize: CGSize,
+         @ViewBuilder content: () -> Content) {
+        self._position = position
+        self.defaultPosition = defaultPosition
+        self.panelSize = panelSize
+        self.containerSize = containerSize
+        self.content = content()
+    }
+
     var body: some View {
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
-        .fill(Color(NSColor.windowBackgroundColor))
+        content
+            .frame(width: panelSize.width, height: panelSize.height, alignment: .top)
+            .overlay(alignment: .top) {
+                Color.clear
+                    .frame(height: panelDragHandleHeight)
+                    .contentShape(Rectangle())
+                    .gesture(dragGesture)
+            }
+            .position(
+                x: resolvedPosition.x + panelSize.width / 2,
+                y: resolvedPosition.y + panelSize.height / 2
+            )
+    }
+
+    private var resolvedPosition: CGPoint {
+        clamped(position ?? defaultPosition)
+    }
+
+    private var dragGesture: some Gesture {
+        DragGesture(minimumDistance: 3, coordinateSpace: .global)
+            .onChanged { value in
+                if dragStartPosition == nil {
+                    dragStartPosition = position ?? defaultPosition
+                }
+
+                guard let start = dragStartPosition else { return }
+                position = clamped(
+                    CGPoint(
+                        x: start.x + value.translation.width,
+                        y: start.y + value.translation.height
+                    )
+                )
+            }
+            .onEnded { _ in
+                position = resolvedPosition
+                dragStartPosition = nil
+            }
+    }
+
+    private func clamped(_ point: CGPoint) -> CGPoint {
+        let margin: CGFloat = 8
+        let maxX = max(margin, containerSize.width - panelSize.width - margin)
+        let maxY = max(margin, containerSize.height - panelSize.height - margin)
+
+        return CGPoint(
+            x: min(max(point.x, margin), maxX),
+            y: min(max(point.y, margin), maxY)
+        )
+    }
+}
+
+private struct FloatingPanelHandle: View {
+    var body: some View {
+        HStack {
+            Spacer()
+            Capsule()
+                .fill(Color.secondary.opacity(0.5))
+                .frame(width: 28, height: 3)
+            Spacer()
+        }
+        .frame(height: panelDragHandleHeight)
+        .contentShape(Rectangle())
+        .help("Faire glisser pour déplacer le panneau")
+    }
+}
+
+private struct SidebarVisibilityButton: View {
+    let isVisible: Bool
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: isVisible ? "sidebar.right" : "sidebar.trailing")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(.primary)
+                .frame(width: 34, height: 34)
+                .background(
+                    Circle()
+                        .fill(Color(NSColor.windowBackgroundColor).opacity(isHovering ? 0.95 : 0.82))
+                )
+                .overlay(
+                    Circle()
+                        .strokeBorder(Color.secondary.opacity(0.22), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.12), radius: 8, x: 0, y: 3)
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .help(isVisible ? "Masquer la fenêtre de droite" : "Afficher la fenêtre de droite")
+    }
+}
+
+// MARK: - WindowDocumentTitleBinder
+
+private struct WindowDocumentTitleBinder: NSViewRepresentable {
+    let fileURL: URL?
+    let isEdited: Bool
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        DispatchQueue.main.async {
+            updateWindow(from: view)
+        }
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        DispatchQueue.main.async {
+            updateWindow(from: view)
+        }
+    }
+
+    private func updateWindow(from view: NSView) {
+        guard let window = view.window else { return }
+
+        let title = fileURL?.lastPathComponent ?? "Sans titre"
+        window.title = title
+        window.representedURL = fileURL
+        window.isDocumentEdited = isEdited
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = false
+        installCenteredTitle(on: window, title: title)
+    }
+
+    private func installCenteredTitle(on window: NSWindow, title: String) {
+        guard let titlebarView = titlebarView(for: window) else { return }
+
+        let titleView: CenteredWindowTitleView
+        if let existing = titlebarView.subviews.compactMap({ $0 as? CenteredWindowTitleView }).first {
+            titleView = existing
+        } else {
+            titleView = CenteredWindowTitleView()
+            titleView.translatesAutoresizingMaskIntoConstraints = false
+            titlebarView.addSubview(titleView)
+
+            NSLayoutConstraint.activate([
+                titleView.centerXAnchor.constraint(equalTo: titlebarView.centerXAnchor),
+                titleView.centerYAnchor.constraint(equalTo: titlebarView.centerYAnchor),
+                titleView.heightAnchor.constraint(equalToConstant: 22),
+                titleView.widthAnchor.constraint(lessThanOrEqualTo: titlebarView.widthAnchor, multiplier: 0.42),
+                titleView.leadingAnchor.constraint(greaterThanOrEqualTo: titlebarView.leadingAnchor, constant: 120),
+                titleView.trailingAnchor.constraint(lessThanOrEqualTo: titlebarView.trailingAnchor, constant: -120)
+            ])
+        }
+
+        titleView.fileURL = fileURL
+        titleView.title = title
+    }
+
+    private func titlebarView(for window: NSWindow) -> NSView? {
+        guard let closeButton = window.standardWindowButton(.closeButton) else { return nil }
+
+        var candidate = closeButton.superview
+        while let next = candidate?.superview,
+              next.bounds.width >= candidate?.bounds.width ?? 0 {
+            candidate = next
+            if next.bounds.width >= window.frame.width * 0.5 {
+                break
+            }
+        }
+
+        return candidate
+    }
+}
+
+private final class CenteredWindowTitleView: NSView {
+    var fileURL: URL?
+    var title: String = "" {
+        didSet {
+            label.stringValue = title
+            invalidateIntrinsicContentSize()
+        }
+    }
+
+    private let label: NSTextField = {
+        let field = NSTextField(labelWithString: "")
+        field.alignment = .center
+        field.font = .systemFont(ofSize: NSFont.systemFontSize, weight: .medium)
+        field.lineBreakMode = .byTruncatingMiddle
+        field.maximumNumberOfLines = 1
+        field.textColor = .labelColor
+        return field
+    }()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        addSubview(label)
+        label.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: leadingAnchor),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor)
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override var intrinsicContentSize: NSSize {
+        let labelSize = label.intrinsicContentSize
+        return NSSize(width: min(max(labelSize.width + 12, 80), 520), height: 22)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard event.modifierFlags.contains(.command),
+              let fileURL else {
+            window?.performDrag(with: event)
+            return
+        }
+
+        NSWorkspace.shared.activateFileViewerSelecting([fileURL])
     }
 }
 

@@ -140,6 +140,7 @@ enum ShapeType: String, CaseIterable, Codable, Identifiable {
     case ellipse   = "Ellipse"
     case triangle  = "Triangle"
     case line      = "Ligne"
+    case polygon   = "Polygone"
 
     var sfSymbol: String {
         switch self {
@@ -149,6 +150,7 @@ enum ShapeType: String, CaseIterable, Codable, Identifiable {
         case .ellipse:   return "oval"
         case .triangle:  return "triangle"
         case .line:      return "line.diagonal"
+        case .polygon:   return "pentagon"
         }
     }
 }
@@ -158,19 +160,17 @@ enum ShapeType: String, CaseIterable, Codable, Identifiable {
 enum Tool: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     case select    = "Sélectionner"
+    case pointSelect = "Points"
     case rectangle = "Rectangle"
-    case square    = "Carré"
-    case circle    = "Cercle"
     case ellipse   = "Ellipse"
     case triangle  = "Triangle"
     case line      = "Ligne"
 
     var shapeType: ShapeType? {
         switch self {
-        case .select:    return nil
+        case .select, .pointSelect:
+            return nil
         case .rectangle: return .rectangle
-        case .square:    return .square
-        case .circle:    return .circle
         case .ellipse:   return .ellipse
         case .triangle:  return .triangle
         case .line:      return .line
@@ -179,17 +179,16 @@ enum Tool: String, CaseIterable, Identifiable {
 
     var sfSymbol: String {
         switch self {
-        case .select:    return "cursorarrow"
+        case .select:    return "arrow.up.left.circle.fill"
+        case .pointSelect: return "arrow.up.left.circle.dotted"
         case .rectangle: return "rectangle"
-        case .square:    return "square"
-        case .circle:    return "circle"
         case .ellipse:   return "oval"
         case .triangle:  return "triangle"
         case .line:      return "line.diagonal"
         }
     }
 
-    var constrainedToSquare: Bool { self == .square || self == .circle }
+    var constrainedToSquare: Bool { false }
 }
 
 // MARK: - CodableRect (CGRect wrapper)
@@ -205,13 +204,27 @@ struct CodableRect: Codable, Equatable {
     var cgRect: CGRect { CGRect(x: x, y: y, width: width, height: height) }
 }
 
+struct CodablePoint: Codable, Equatable {
+    var x, y: Double
+
+    init(_ p: CGPoint) {
+        x = Double(p.x)
+        y = Double(p.y)
+    }
+
+    var cgPoint: CGPoint {
+        CGPoint(x: x, y: y)
+    }
+}
+
 // MARK: - CADShape
 
-struct CADShape: Identifiable, Codable {
+struct CADShape: Identifiable, Codable, Equatable {
     var id:          UUID
     var name:        String
     var type:        ShapeType
     var codableBounds: CodableRect
+    var codablePoints: [CodablePoint]?
     var fillColor:   CADColor
     var strokeColor: CADColor
     var strokeWidth: Double
@@ -226,8 +239,13 @@ struct CADShape: Identifiable, Codable {
         CGPoint(x: bounds.midX, y: bounds.midY)
     }
 
+    var customPoints: [CGPoint] {
+        get { codablePoints?.map(\.cgPoint) ?? [] }
+        set { codablePoints = newValue.isEmpty ? nil : newValue.map(CodablePoint.init) }
+    }
+
     var visualBounds: CGRect {
-        let points = rotatedBoundsPoints()
+        let points = visualGeometryPoints()
         guard !points.isEmpty else { return bounds.standardized }
         let xs = points.map(\.x)
         let ys = points.map(\.y)
@@ -237,11 +255,27 @@ struct CADShape: Identifiable, Codable {
     }
 
     var rotatedHandlePoints: [CGPoint] {
-        rotatedBoundsPoints()
+        if let endpoints = lineEndpoints {
+            return [endpoints.start, endpoints.end]
+        }
+        if type == .polygon, !customPoints.isEmpty {
+            return transformedCustomPoints()
+        }
+        return rotatedBoundsPoints()
+    }
+
+    var lineEndpoints: (start: CGPoint, end: CGPoint)? {
+        guard type == .line else { return nil }
+        let b = bounds.standardized
+        return (
+            rotatedPoint(CGPoint(x: b.minX, y: b.midY), byDegrees: rotationAngle, around: center),
+            rotatedPoint(CGPoint(x: b.maxX, y: b.midY), byDegrees: rotationAngle, around: center)
+        )
     }
 
     // 96 DPI → 1 inch = 25.4 mm → 96/25.4 px/mm
     static let pixelsPerMM: Double = 96.0 / 25.4
+    private static let minimumLineBoundsThickness: CGFloat = 8
 
     var widthMM:  Double { Double(bounds.width)  / Self.pixelsPerMM }
     var heightMM: Double { Double(bounds.height) / Self.pixelsPerMM }
@@ -250,11 +284,124 @@ struct CADShape: Identifiable, Codable {
 
     init(id: UUID = UUID(), type: ShapeType, bounds: CGRect, name: String,
          fillColor: CADColor = .white, strokeColor: CADColor = .black,
-         strokeWidth: Double = 2.0, rotationAngle: Double = 0.0) {
+         strokeWidth: Double = 2.0, rotationAngle: Double = 0.0,
+         points: [CGPoint] = []) {
         self.id = id; self.type = type; self.codableBounds = CodableRect(bounds)
+        self.codablePoints = points.isEmpty ? nil : points.map(CodablePoint.init)
         self.name = name; self.fillColor = fillColor
         self.strokeColor = strokeColor; self.strokeWidth = strokeWidth
         self.rotationAngle = Self.normalizedRotation(rotationAngle)
+    }
+
+    static func line(from start: CGPoint,
+                     to end: CGPoint,
+                     name: String,
+                     fillColor: CADColor = .white,
+                     strokeColor: CADColor = .black,
+                     strokeWidth: Double = 2.0,
+                     id: UUID = UUID()) -> CADShape {
+        let geometry = lineGeometry(from: start, to: end, strokeWidth: strokeWidth)
+        return CADShape(id: id,
+                        type: .line,
+                        bounds: geometry.bounds,
+                        name: name,
+                        fillColor: fillColor,
+                        strokeColor: strokeColor,
+                        strokeWidth: strokeWidth,
+                        rotationAngle: geometry.rotationAngle)
+    }
+
+    static func lineGeometry(from start: CGPoint,
+                             to end: CGPoint,
+                             strokeWidth: Double) -> (bounds: CGRect, rotationAngle: Double, length: CGFloat) {
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        let length = sqrt(dx * dx + dy * dy)
+        let thickness = max(CGFloat(strokeWidth), minimumLineBoundsThickness)
+        let center = CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
+        let bounds = CGRect(x: center.x - length / 2,
+                            y: center.y - thickness / 2,
+                            width: length,
+                            height: thickness)
+        let angle = atan2(Double(dy), Double(dx)) * 180 / Double.pi
+        return (bounds, normalizedRotation(angle), length)
+    }
+
+    mutating func translate(by delta: CGSize) {
+        bounds = bounds.offsetBy(dx: delta.width, dy: delta.height)
+        if !customPoints.isEmpty {
+            customPoints = customPoints.map {
+                CGPoint(x: $0.x + delta.width, y: $0.y + delta.height)
+            }
+        }
+    }
+
+    mutating func resize(to newBounds: CGRect) {
+        let old = bounds.standardized
+        bounds = newBounds
+        guard !customPoints.isEmpty else { return }
+
+        let target = newBounds.standardized
+        customPoints = customPoints.map { point in
+            let xRatio = old.width == 0 ? 0.5 : (point.x - old.minX) / old.width
+            let yRatio = old.height == 0 ? 0.5 : (point.y - old.minY) / old.height
+            return CGPoint(x: target.minX + xRatio * target.width,
+                           y: target.minY + yRatio * target.height)
+        }
+    }
+
+    func editablePoints() -> [CGPoint] {
+        let b = bounds.standardized
+
+        switch type {
+        case .line:
+            guard let endpoints = lineEndpoints else { return [] }
+            return [endpoints.start, endpoints.end]
+        case .rectangle, .square:
+            return [
+                CGPoint(x: b.minX, y: b.minY),
+                CGPoint(x: b.maxX, y: b.minY),
+                CGPoint(x: b.maxX, y: b.maxY),
+                CGPoint(x: b.minX, y: b.maxY)
+            ].map { rotatedPoint($0, byDegrees: rotationAngle, around: center) }
+        case .triangle:
+            return [
+                CGPoint(x: b.midX, y: b.minY),
+                CGPoint(x: b.maxX, y: b.maxY),
+                CGPoint(x: b.minX, y: b.maxY)
+            ].map { rotatedPoint($0, byDegrees: rotationAngle, around: center) }
+        case .polygon:
+            return transformedCustomPoints()
+        case .circle, .ellipse:
+            return []
+        }
+    }
+
+    func movingEditablePoint(at index: Int, to point: CGPoint) -> CADShape? {
+        var points = editablePoints()
+        guard points.indices.contains(index) else { return nil }
+        points[index] = point
+
+        if type == .line, points.count == 2 {
+            return CADShape.line(from: points[0],
+                                 to: points[1],
+                                 name: name,
+                                 fillColor: fillColor,
+                                 strokeColor: strokeColor,
+                                 strokeWidth: strokeWidth,
+                                 id: id)
+        }
+
+        guard let polygonBounds = Self.bounds(for: points) else { return nil }
+        return CADShape(id: id,
+                        type: .polygon,
+                        bounds: polygonBounds,
+                        name: name,
+                        fillColor: fillColor,
+                        strokeColor: strokeColor,
+                        strokeWidth: strokeWidth,
+                        rotationAngle: 0,
+                        points: points)
     }
 
     func bezierPath() -> NSBezierPath {
@@ -288,6 +435,18 @@ struct CADShape: Identifiable, Codable {
             p.move(to: CGPoint(x: b.minX, y: b.midY))
             p.line(to: CGPoint(x: b.maxX, y: b.midY))
             return p
+        case .polygon:
+            let points = customPoints
+            guard let first = points.first else {
+                return NSBezierPath(rect: bounds.standardized)
+            }
+            let p = NSBezierPath()
+            p.move(to: first)
+            for point in points.dropFirst() {
+                p.line(to: point)
+            }
+            p.close()
+            return p
         }
     }
 
@@ -311,6 +470,8 @@ struct CADShape: Identifiable, Codable {
             let tol = max(CGFloat(strokeWidth) + 4, 8)
             return b.minX <= localPoint.x && localPoint.x <= b.maxX
                 && abs(localPoint.y - b.midY) <= tol
+        case .polygon:
+            return baseBezierPath().contains(localPoint)
         }
     }
 
@@ -331,6 +492,29 @@ struct CADShape: Identifiable, Codable {
         ]
         guard abs(rotationAngle) > 0.0001 else { return points }
         return points.map { rotatedPoint($0, byDegrees: rotationAngle, around: center) }
+    }
+
+    private func visualGeometryPoints() -> [CGPoint] {
+        if type == .polygon, !customPoints.isEmpty {
+            return transformedCustomPoints()
+        }
+        return rotatedBoundsPoints()
+    }
+
+    private func transformedCustomPoints() -> [CGPoint] {
+        let points = customPoints
+        guard abs(rotationAngle) > 0.0001 else { return points }
+        return points.map { rotatedPoint($0, byDegrees: rotationAngle, around: center) }
+    }
+
+    private static func bounds(for points: [CGPoint]) -> CGRect? {
+        guard !points.isEmpty else { return nil }
+        let xs = points.map(\.x)
+        let ys = points.map(\.y)
+        return CGRect(x: xs.min()!,
+                      y: ys.min()!,
+                      width: xs.max()! - xs.min()!,
+                      height: ys.max()! - ys.min()!)
     }
 
     private func rotatedPoint(_ point: CGPoint, byDegrees degrees: Double, around center: CGPoint) -> CGPoint {

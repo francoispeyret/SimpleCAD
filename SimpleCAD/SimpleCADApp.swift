@@ -14,12 +14,30 @@ struct SimpleCADApp: App {
                 .environmentObject(document)
                 .onOpenURL { url in document.open(url: url) }
         }
-        .windowStyle(.hiddenTitleBar)
         .commands {
             // File menu
             CommandGroup(replacing: .newItem) {
                 Button("Nouveau")              { document.new()    }.keyboardShortcut("n")
                 Button("Ouvrir…")             { document.open()   }.keyboardShortcut("o")
+                Menu("Ouvrir récent") {
+                    if document.recentFileURLs.isEmpty {
+                        Button("Aucun fichier récent") { }
+                            .disabled(true)
+                    } else {
+                        ForEach(document.recentFileURLs, id: \.self) { url in
+                            Button(url.lastPathComponent) {
+                                document.openRecent(url)
+                            }
+                            .help(url.path)
+                        }
+
+                        Divider()
+
+                        Button("Effacer le menu") {
+                            document.clearRecentFiles()
+                        }
+                    }
+                }
                 Divider()
                 Button("Enregistrer")         { document.save()   }.keyboardShortcut("s")
                 Button("Enregistrer sous…")   { document.saveAs() }.keyboardShortcut("S")
