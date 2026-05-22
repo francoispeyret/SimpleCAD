@@ -9,6 +9,7 @@ private let trafficLightBackdropSize = CGSize(width: 80, height: 32)
 struct ContentView: View {
     @EnvironmentObject var document: CADDocument
     @State private var keyboardMonitor: Any?
+    @State private var isFullScreen = false
 
     var body: some View {
         GeometryReader { geo in
@@ -19,12 +20,14 @@ struct ContentView: View {
                     .frame(width: geo.size.width, height: geo.size.height)
 
                 // ── Couche 0.5 : fond des boutons de fenêtre ──────
-                TrafficLightBackdrop()
-                    .frame(width: trafficLightBackdropSize.width,
-                           height: trafficLightBackdropSize.height)
-                    .padding(.top, 0)
-                    .padding(.leading, 0)
-                    .allowsHitTesting(false)
+                if !isFullScreen {
+                    TrafficLightBackdrop()
+                        .frame(width: trafficLightBackdropSize.width,
+                               height: trafficLightBackdropSize.height)
+                        .padding(.top, 0)
+                        .padding(.leading, 0)
+                        .allowsHitTesting(false)
+                }
 
                 // ── Couche 1 : toolbar (bord gauche, verticale) ───
                 GlassEffectContainer {
@@ -42,8 +45,10 @@ struct ContentView: View {
                     Spacer()
                     GlassEffectContainer {
                         SidebarView()
-                            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
+                            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .padding(.top, 44)
                     .padding(.leading, 6)
                     .padding(.trailing, 28)
@@ -58,6 +63,15 @@ struct ContentView: View {
         .onAppear {
             maximiseWindow()
             setupKeyboardShortcuts()
+            updateFullScreenState()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { notification in
+            guard notification.object is NSWindow else { return }
+            isFullScreen = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { notification in
+            guard notification.object is NSWindow else { return }
+            isFullScreen = false
         }
         .onDisappear {
             if let keyboardMonitor {
@@ -71,9 +85,16 @@ struct ContentView: View {
         DispatchQueue.main.async {
             guard let screen = NSScreen.main,
                   let window = NSApp.windows.first else { return }
+            WindowTabPolicy.configure(window)
             let frame = screen.visibleFrame.insetBy(dx: 40, dy: 40)
             window.setFrame(frame, display: true)
             window.center()
+        }
+    }
+
+    private func updateFullScreenState() {
+        DispatchQueue.main.async {
+            isFullScreen = NSApp.windows.contains { $0.styleMask.contains(.fullScreen) }
         }
     }
 
@@ -196,7 +217,6 @@ private struct SidebarCanvasOptionsView: View {
         .padding(.top, 10)
         .padding(.bottom, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(NSColor.windowBackgroundColor))
     }
 
     private var gridModeMenu: some View {

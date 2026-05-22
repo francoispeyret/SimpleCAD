@@ -19,6 +19,7 @@
 		AA000000000000000000010 /* StatusBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000010 /* StatusBarView.swift */; };
 		AA000000000000000000011 /* SVGService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000011 /* SVGService.swift */; };
 		AA000000000000000000013 /* HistoryPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000014 /* HistoryPanelView.swift */; };
+		AA000000000000000000014 /* WindowTabPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000015 /* WindowTabPolicy.swift */; };
 		AA000000000000000000012 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000012 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -38,6 +39,7 @@
 		AA100000000000000000012 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AA100000000000000000013 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AA100000000000000000014 /* HistoryPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryPanelView.swift; sourceTree = "<group>"; };
+		AA100000000000000000015 /* WindowTabPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowTabPolicy.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -92,6 +94,7 @@
 			isa = PBXGroup;
 			children = (
 				AA100000000000000000011 /* SVGService.swift */,
+				AA100000000000000000015 /* WindowTabPolicy.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -193,6 +196,7 @@
 				AA000000000000000000010 /* StatusBarView.swift in Sources */,
 				AA000000000000000000011 /* SVGService.swift in Sources */,
 				AA000000000000000000013 /* HistoryPanelView.swift in Sources */,
+				AA000000000000000000014 /* WindowTabPolicy.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -325,14 +329,14 @@
 				CODE_SIGN_ENTITLEMENTS = "";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SimpleCAD/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.3.0;
+				MARKETING_VERSION = 2.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.simplecad.SimpleCAD;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -348,14 +352,14 @@
 				CODE_SIGN_ENTITLEMENTS = "";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SimpleCAD/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.3.0;
+				MARKETING_VERSION = 2.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.simplecad.SimpleCAD;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

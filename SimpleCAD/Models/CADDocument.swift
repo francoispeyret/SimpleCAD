@@ -44,6 +44,7 @@ class CADDocument: ObservableObject {
 
     private var preMoveShapes: [CADShape]? = nil
     private var preRotationShapes: [CADShape]? = nil
+    private var preResizeShapes: [CADShape]? = nil
     private let importContentMargin: CGFloat = 400
 
     var canUndo: Bool { historyIndex > 0 }
@@ -188,6 +189,38 @@ class CADDocument: ObservableObject {
         }
         isDirty = true
         // Pas de recordAction ici : géré par beginMove/commitMove
+    }
+
+    func moveSelectedShapes(from baseShapes: [UUID: CADShape], by delta: CGSize) {
+        for id in selectedIDs {
+            guard let base = baseShapes[id],
+                  let i = shapes.firstIndex(where: { $0.id == id })
+            else { continue }
+
+            shapes[i].bounds = base.bounds.offsetBy(dx: delta.width, dy: delta.height)
+        }
+        isDirty = true
+        // Pas de recordAction ici : géré par beginMove/commitMove
+    }
+
+    func beginResize() {
+        if preResizeShapes == nil { preResizeShapes = shapes }
+    }
+
+    func resizeShape(id: UUID, to bounds: CGRect) {
+        guard let i = shapes.firstIndex(where: { $0.id == id }) else { return }
+        shapes[i].bounds = bounds
+        isDirty = true
+    }
+
+    func commitResize() {
+        guard let pre = preResizeShapes else { return }
+        preResizeShapes = nil
+        let resized = shapes.contains { shape in
+            guard let old = pre.first(where: { $0.id == shape.id }) else { return false }
+            return old.bounds != shape.bounds
+        }
+        if resized { recordAction("Transformation") }
     }
 
     func renameShape(id: UUID, to newName: String) {

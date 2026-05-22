@@ -4,6 +4,8 @@ import AppKit
 
 final class CADCanvasView: NSView {
 
+    private static var resizeCursorCache: [Int: NSCursor] = [:]
+
     // Injected by representable
     var document: CADDocument! {
         didSet { needsDisplay = true }
@@ -24,6 +26,84 @@ final class CADCanvasView: NSView {
     private var marqueeRect = CGRect.zero
     private var marqueeBaseSelection: Set<UUID> = []
     private var marqueeAddsToSelection = false
+    private var dragStartPt = CGPoint.zero
+    private var dragBaseShapes: [UUID: CADShape] = [:]
+
+    // MARK: - Resize drag state
+
+    private enum ResizeHandle: CaseIterable {
+        case topLeft
+        case top
+        case topRight
+        case right
+        case bottomRight
+        case bottom
+        case bottomLeft
+        case left
+
+        var opposite: ResizeHandle {
+            switch self {
+            case .topLeft:     return .bottomRight
+            case .top:         return .bottom
+            case .topRight:    return .bottomLeft
+            case .right:       return .left
+            case .bottomRight: return .topLeft
+            case .bottom:      return .top
+            case .bottomLeft:  return .topRight
+            case .left:        return .right
+            }
+        }
+
+        func point(in rect: CGRect) -> CGPoint {
+            switch self {
+            case .topLeft:     return CGPoint(x: rect.minX, y: rect.minY)
+            case .top:         return CGPoint(x: rect.midX, y: rect.minY)
+            case .topRight:    return CGPoint(x: rect.maxX, y: rect.minY)
+            case .right:       return CGPoint(x: rect.maxX, y: rect.midY)
+            case .bottomRight: return CGPoint(x: rect.maxX, y: rect.maxY)
+            case .bottom:      return CGPoint(x: rect.midX, y: rect.maxY)
+            case .bottomLeft:  return CGPoint(x: rect.minX, y: rect.maxY)
+            case .left:        return CGPoint(x: rect.minX, y: rect.midY)
+            }
+        }
+
+        var affectsX: Bool {
+            switch self {
+            case .topLeft, .topRight, .right, .bottomRight, .bottomLeft, .left:
+                return true
+            case .top, .bottom:
+                return false
+            }
+        }
+
+        var affectsY: Bool {
+            switch self {
+            case .topLeft, .top, .topRight, .bottomRight, .bottom, .bottomLeft:
+                return true
+            case .right, .left:
+                return false
+            }
+        }
+
+        var cursorAngleOffset: Double {
+            switch self {
+            case .left, .right:
+                return 0
+            case .top, .bottom:
+                return 90
+            case .topLeft, .bottomRight:
+                return -45
+            case .topRight, .bottomLeft:
+                return 45
+            }
+        }
+    }
+
+    private var resizeHandleRects: [UUID: [ResizeHandle: CGRect]] = [:]
+    private var isResizing = false
+    private var resizingShapeID: UUID?
+    private var resizingHandle: ResizeHandle?
+    private var resizeStartShape: CADShape?
 
     // MARK: - Pan state (espace + glisser)
 
@@ -46,6 +126,29 @@ final class CADCanvasView: NSView {
     private var rotateStartMouseAngle: Double = 0
     private var rotateStartShapeAngle: Double = 0
 
+    // MARK: - Construction guides
+
+    private enum GuideOrientation { case vertical, horizontal }
+
+    private struct ConstructionGuide {
+        var orientation: GuideOrientation
+        var position: CGFloat
+        var start: CGFloat
+        var end: CGFloat
+    }
+
+    private struct SnapAnchor {
+        var value: CGFloat
+        var bounds: CGRect
+    }
+
+    private struct SnapResult {
+        var delta: CGSize
+        var guides: [ConstructionGuide]
+    }
+
+    private var activeConstructionGuides: [ConstructionGuide] = []
+
     // MARK: - Inline dimension editor
 
     private var dimensionEditor: NSTextField?
@@ -64,6 +167,9 @@ final class CADCanvasView: NSView {
     private let verticalRulerWidth: CGFloat = 38 * 0.34
     private let rulerMajorTargetSpacing: CGFloat = 132
     private let rulerMinorDivisions: CGFloat = 5
+    private let snapToleranceScreen: CGFloat = 8
+    private let constructionGuidePadding: CGFloat = 42
+    private let minimumResizeSide: CGFloat = 6
 
     // Facteur inverse du zoom : maintient les éléments graphiques à taille constante à l'écran.
     private var invZoom: CGFloat { CGFloat(1.0 / max(document.zoomLevel, 0.01)) }
@@ -173,12 +279,15 @@ final class CADCanvasView: NSView {
 
         for shape in document.shapes { drawShape(shape, ctx: ctx) }
 
+        if !activeConstructionGuides.isEmpty { drawConstructionGuides(ctx: ctx) }
+
         if isDrawing, document.currentTool != .select { drawPreview(ctx: ctx) }
 
         // Reset hit rects each frame
         widthHitRects.removeAll()
         heightHitRects.removeAll()
         rotationHandleRects.removeAll()
+        resizeHandleRects.removeAll()
 
         for shape in document.shapes where shouldDrawDimensions(for: shape) && !document.selectedIDs.contains(shape.id) {
             drawDimensions(shape, ctx: ctx)
@@ -264,25 +373,59 @@ final class CADCanvasView: NSView {
         ctx.restoreGState()
     }
 
+    private func drawConstructionGuides(ctx: CGContext) {
+        let z = invZoom
+        ctx.saveGState()
+        ctx.setStrokeColor(NSColor.systemTeal.withAlphaComponent(isDarkAppearance ? 0.95 : 0.85).cgColor)
+        ctx.setLineWidth(1.2 * z)
+        ctx.setLineDash(phase: 0, lengths: [5 * z, 4 * z])
+
+        for guide in activeConstructionGuides {
+            switch guide.orientation {
+            case .vertical:
+                ctx.move(to: CGPoint(x: guide.position, y: guide.start))
+                ctx.addLine(to: CGPoint(x: guide.position, y: guide.end))
+            case .horizontal:
+                ctx.move(to: CGPoint(x: guide.start, y: guide.position))
+                ctx.addLine(to: CGPoint(x: guide.end, y: guide.position))
+            }
+        }
+
+        ctx.strokePath()
+        ctx.restoreGState()
+    }
+
     // MARK: - Resize handles
+
+    private func resizeHandlePositions(for shape: CADShape) -> [(ResizeHandle, CGPoint)] {
+        let b = shape.bounds.standardized
+        return ResizeHandle.allCases.map { handle in
+            let point = handle.point(in: b)
+            return (handle, rotatePoint(point, byDegrees: shape.rotationAngle, around: shape.center))
+        }
+    }
+
+    private func calculatedResizeHandleRects(for shape: CADShape) -> [ResizeHandle: CGRect] {
+        let hs = handleSize * invZoom
+        return Dictionary(uniqueKeysWithValues: resizeHandlePositions(for: shape).map { handle, pt in
+            let rect = CGRect(x: pt.x - hs/2, y: pt.y - hs/2, width: hs, height: hs)
+            return (handle, rect.insetBy(dx: -5 * invZoom, dy: -5 * invZoom))
+        })
+    }
 
     private func drawHandles(_ shape: CADShape, ctx: CGContext) {
         let hs = handleSize * invZoom
-        let b = shape.bounds.standardized
-        let midPoints = [
-            CGPoint(x: b.midX, y: b.minY),
-            CGPoint(x: b.maxX, y: b.midY),
-            CGPoint(x: b.midX, y: b.maxY),
-            CGPoint(x: b.minX, y: b.midY),
-        ].map { rotatePoint($0, byDegrees: shape.rotationAngle, around: shape.center) }
-        let pts = shape.rotatedHandlePoints + midPoints
+        var hitRects: [ResizeHandle: CGRect] = [:]
 
-        for pt in pts {
+        for (handle, pt) in resizeHandlePositions(for: shape) {
             let r = CGRect(x: pt.x - hs/2, y: pt.y - hs/2, width: hs, height: hs)
             overlayFillColor.setFill(); NSBezierPath(rect: r).fill()
             let bp = NSBezierPath(rect: r); bp.lineWidth = 1.5 * invZoom
             NSColor.systemBlue.setStroke(); bp.stroke()
+            hitRects[handle] = r.insetBy(dx: -5 * invZoom, dy: -5 * invZoom)
         }
+
+        resizeHandleRects[shape.id] = hitRects
     }
 
     // MARK: - Dimension annotations
@@ -666,6 +809,219 @@ final class CADCanvasView: NSView {
         atan2(Double(point.y - center.y), Double(point.x - center.x)) * 180 / Double.pi
     }
 
+    private func resizedBounds(for shape: CADShape,
+                               handle: ResizeHandle,
+                               to point: CGPoint,
+                               preserveAspect: Bool) -> CGRect {
+        let b = shape.bounds.standardized
+        let angle = shape.rotationAngle
+        let xAxis = rotatedUnitX(byDegrees: angle)
+        let yAxis = rotatedUnitY(byDegrees: angle)
+        let fixedPoint = rotatePoint(handle.opposite.point(in: b),
+                                     byDegrees: angle,
+                                     around: shape.center)
+        let vector = CGVector(dx: point.x - fixedPoint.x,
+                              dy: point.y - fixedPoint.y)
+        let projectedX = dot(vector, xAxis)
+        let projectedY = dot(vector, yAxis)
+        let minSide = max(minimumResizeSide, 2 * invZoom)
+
+        var width: CGFloat
+        var height: CGFloat
+        var xSign: CGFloat
+        var ySign: CGFloat
+
+        switch handle {
+        case .topLeft:
+            width = max(-projectedX, minSide)
+            height = max(-projectedY, minSide)
+            xSign = -1; ySign = -1
+        case .top:
+            width = b.width
+            height = max(-projectedY, minSide)
+            xSign = 0; ySign = -1
+        case .topRight:
+            width = max(projectedX, minSide)
+            height = max(-projectedY, minSide)
+            xSign = 1; ySign = -1
+        case .right:
+            width = max(projectedX, minSide)
+            height = b.height
+            xSign = 1; ySign = 0
+        case .bottomRight:
+            width = max(projectedX, minSide)
+            height = max(projectedY, minSide)
+            xSign = 1; ySign = 1
+        case .bottom:
+            width = b.width
+            height = max(projectedY, minSide)
+            xSign = 0; ySign = 1
+        case .bottomLeft:
+            width = max(-projectedX, minSide)
+            height = max(projectedY, minSide)
+            xSign = -1; ySign = 1
+        case .left:
+            width = max(-projectedX, minSide)
+            height = b.height
+            xSign = -1; ySign = 0
+        }
+
+        if preserveAspect {
+            let aspect = max(b.width, minSide) / max(b.height, minSide)
+            if handle.affectsX && !handle.affectsY {
+                height = width / aspect
+            } else if handle.affectsY && !handle.affectsX {
+                width = height * aspect
+            } else if width / max(height, minSide) > aspect {
+                height = width / aspect
+            } else {
+                width = height * aspect
+            }
+        }
+
+        let center = CGPoint(
+            x: fixedPoint.x + xAxis.dx * width * xSign / 2 + yAxis.dx * height * ySign / 2,
+            y: fixedPoint.y + xAxis.dy * width * xSign / 2 + yAxis.dy * height * ySign / 2
+        )
+
+        return CGRect(x: center.x - width / 2,
+                      y: center.y - height / 2,
+                      width: width,
+                      height: height)
+    }
+
+    private func dot(_ a: CGVector, _ b: CGVector) -> CGFloat {
+        a.dx * b.dx + a.dy * b.dy
+    }
+
+    private func translatedShapes(from baseShapes: [UUID: CADShape], by delta: CGSize) -> [CADShape] {
+        document.shapes.compactMap { shape in
+            guard document.selectedIDs.contains(shape.id),
+                  var base = baseShapes[shape.id] else { return nil }
+            base.bounds = base.bounds.offsetBy(dx: delta.width, dy: delta.height)
+            return base
+        }
+    }
+
+    private func snapMovingShapes(_ movingShapes: [CADShape],
+                                  excluding excludedIDs: Set<UUID>) -> SnapResult {
+        let tolerance = snapToleranceScreen * invZoom
+        let references = referenceAnchors(excluding: excludedIDs)
+        guard !references.vertical.isEmpty || !references.horizontal.isEmpty else {
+            return SnapResult(delta: .zero, guides: [])
+        }
+
+        let moving = anchors(for: movingShapes)
+        var guides: [ConstructionGuide] = []
+        var delta = CGSize.zero
+
+        if let match = bestSnapMatch(moving: moving.vertical,
+                                     references: references.vertical,
+                                     tolerance: tolerance,
+                                     orientation: .vertical) {
+            delta.width = match.adjustment
+            guides.append(match.guide)
+        }
+
+        if let match = bestSnapMatch(moving: moving.horizontal,
+                                     references: references.horizontal,
+                                     tolerance: tolerance,
+                                     orientation: .horizontal) {
+            delta.height = match.adjustment
+            guides.append(match.guide)
+        }
+
+        return SnapResult(delta: delta, guides: guides)
+    }
+
+    private func snappedPoint(_ point: CGPoint, excluding excludedIDs: Set<UUID>) -> (point: CGPoint, guides: [ConstructionGuide]) {
+        let tolerance = snapToleranceScreen * invZoom
+        let references = referenceAnchors(excluding: excludedIDs)
+        let pointBounds = CGRect(x: point.x, y: point.y, width: 0, height: 0)
+        let verticalAnchor = [SnapAnchor(value: point.x, bounds: pointBounds)]
+        let horizontalAnchor = [SnapAnchor(value: point.y, bounds: pointBounds)]
+
+        var snapped = point
+        var guides: [ConstructionGuide] = []
+
+        if let match = bestSnapMatch(moving: verticalAnchor,
+                                     references: references.vertical,
+                                     tolerance: tolerance,
+                                     orientation: .vertical) {
+            snapped.x += match.adjustment
+            guides.append(match.guide)
+        }
+
+        if let match = bestSnapMatch(moving: horizontalAnchor,
+                                     references: references.horizontal,
+                                     tolerance: tolerance,
+                                     orientation: .horizontal) {
+            snapped.y += match.adjustment
+            guides.append(match.guide)
+        }
+
+        return (snapped, guides)
+    }
+
+    private func referenceAnchors(excluding excludedIDs: Set<UUID>) -> (vertical: [SnapAnchor], horizontal: [SnapAnchor]) {
+        anchors(for: document.shapes.filter { !excludedIDs.contains($0.id) })
+    }
+
+    private func anchors(for shapes: [CADShape]) -> (vertical: [SnapAnchor], horizontal: [SnapAnchor]) {
+        var vertical: [SnapAnchor] = []
+        var horizontal: [SnapAnchor] = []
+
+        for shape in shapes {
+            let b = shape.visualBounds.standardized
+            let points = shape.rotatedHandlePoints + [shape.center]
+            vertical.append(contentsOf: points.map { SnapAnchor(value: $0.x, bounds: b) })
+            horizontal.append(contentsOf: points.map { SnapAnchor(value: $0.y, bounds: b) })
+        }
+
+        return (vertical, horizontal)
+    }
+
+    private func bestSnapMatch(moving: [SnapAnchor],
+                               references: [SnapAnchor],
+                               tolerance: CGFloat,
+                               orientation: GuideOrientation) -> (adjustment: CGFloat, guide: ConstructionGuide)? {
+        var best: (distance: CGFloat, adjustment: CGFloat, guide: ConstructionGuide)?
+        let padding = constructionGuidePadding * invZoom
+
+        for movingAnchor in moving {
+            for reference in references {
+                let adjustment = reference.value - movingAnchor.value
+                let distance = abs(adjustment)
+                guard distance <= tolerance else { continue }
+
+                let guide: ConstructionGuide
+                switch orientation {
+                case .vertical:
+                    let start = min(movingAnchor.bounds.minY, reference.bounds.minY) - padding
+                    let end = max(movingAnchor.bounds.maxY, reference.bounds.maxY) + padding
+                    guide = ConstructionGuide(orientation: .vertical,
+                                              position: reference.value,
+                                              start: start,
+                                              end: end)
+                case .horizontal:
+                    let start = min(movingAnchor.bounds.minX, reference.bounds.minX) - padding
+                    let end = max(movingAnchor.bounds.maxX, reference.bounds.maxX) + padding
+                    guide = ConstructionGuide(orientation: .horizontal,
+                                              position: reference.value,
+                                              start: start,
+                                              end: end)
+                }
+
+                if best == nil || distance < best!.distance {
+                    best = (distance, adjustment, guide)
+                }
+            }
+        }
+
+        guard let best else { return nil }
+        return (adjustment: best.adjustment, guide: best.guide)
+    }
+
     private func drawArrow(_ ctx: CGContext, at p: CGPoint, direction: CGVector) {
         let s: CGFloat = 6 * invZoom
         let length = max(sqrt(direction.dx * direction.dx + direction.dy * direction.dy), 0.0001)
@@ -806,6 +1162,13 @@ final class CADCanvasView: NSView {
         let pt = convert(event.locationInWindow, from: nil)
         if pointIsInRuler(pt) { return }
 
+        // ── Resize handle hit test ─────────────────────────────────
+        if document.currentTool == .select,
+           let resizeTarget = resizeHandle(at: pt) {
+            startResize(for: resizeTarget.shape, handle: resizeTarget.handle, at: pt)
+            return
+        }
+
         // ── Rotation handle hit test ────────────────────────────────
         for shape in document.shapes.reversed() where document.selectedIDs.contains(shape.id) {
             if let r = rotationHandleRects[shape.id], r.contains(pt) {
@@ -839,6 +1202,12 @@ final class CADCanvasView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+
+        if isResizing {
+            let pt = convert(event.locationInWindow, from: nil)
+            updateResize(to: pt, event: event)
+            return
+        }
 
         if isRotating {
             let pt = convert(event.locationInWindow, from: nil)
@@ -876,10 +1245,7 @@ final class CADCanvasView: NSView {
             if isMarqueeSelecting {
                 updateSelectionMarquee(to: pt)
             } else if isDragging, !document.selectedIDs.isEmpty {
-                let delta = CGSize(width: pt.x - lastDragPt.x, height: pt.y - lastDragPt.y)
-                document.moveSelectedShapes(by: delta)
-                lastDragPt = pt
-                needsDisplay = true
+                updateShapeDrag(to: pt, event: event)
             }
         } else if isDrawing {
             var r = CGRect(
@@ -898,6 +1264,11 @@ final class CADCanvasView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if isResizing {
+            finishResize()
+            return
+        }
+
         if isRotating {
             finishRotation()
             return
@@ -914,8 +1285,7 @@ final class CADCanvasView: NSView {
             if isMarqueeSelecting {
                 finishSelectionMarquee()
             } else {
-                document.commitMove()
-                isDragging = false
+                finishShapeDrag()
             }
         } else if isDrawing {
             isDrawing = false
@@ -941,8 +1311,7 @@ final class CADCanvasView: NSView {
             if !document.selectedIDs.contains(shape.id) {
                 document.selectShape(id: shape.id, additive: event.modifierFlags.contains(.shift))
             }
-            isDragging = true; lastDragPt = pt
-            document.beginMove()
+            startShapeDrag(at: pt)
         } else {
             startSelectionMarquee(at: pt, additive: event.modifierFlags.contains(.shift))
         }
@@ -951,6 +1320,7 @@ final class CADCanvasView: NSView {
 
     private func startSelectionMarquee(at point: CGPoint, additive: Bool) {
         isDragging = false
+        activeConstructionGuides = []
         marqueeStart = point
         marqueeRect = CGRect(origin: point, size: .zero)
         marqueeBaseSelection = document.selectedIDs
@@ -995,6 +1365,95 @@ final class CADCanvasView: NSView {
         marqueeRect = .zero
         marqueeBaseSelection = []
         marqueeAddsToSelection = false
+        activeConstructionGuides = []
+    }
+
+    private func startShapeDrag(at point: CGPoint) {
+        isDragging = true
+        lastDragPt = point
+        dragStartPt = point
+        dragBaseShapes = Dictionary(uniqueKeysWithValues: document.shapes
+            .filter { document.selectedIDs.contains($0.id) }
+            .map { ($0.id, $0) })
+        activeConstructionGuides = []
+        document.beginMove()
+    }
+
+    private func updateShapeDrag(to point: CGPoint, event: NSEvent) {
+        let rawDelta = CGSize(width: point.x - dragStartPt.x,
+                              height: point.y - dragStartPt.y)
+        let proposedShapes = translatedShapes(from: dragBaseShapes, by: rawDelta)
+        let snap = event.modifierFlags.contains(.option)
+            ? SnapResult(delta: .zero, guides: [])
+            : snapMovingShapes(proposedShapes, excluding: document.selectedIDs)
+        let finalDelta = CGSize(width: rawDelta.width + snap.delta.width,
+                                height: rawDelta.height + snap.delta.height)
+
+        document.moveSelectedShapes(from: dragBaseShapes, by: finalDelta)
+        activeConstructionGuides = snap.guides
+        lastDragPt = point
+        needsDisplay = true
+    }
+
+    private func finishShapeDrag() {
+        document.commitMove()
+        isDragging = false
+        dragBaseShapes.removeAll()
+        activeConstructionGuides = []
+        needsDisplay = true
+    }
+
+    private func resizeHandle(at point: CGPoint) -> (shape: CADShape, handle: ResizeHandle)? {
+        for shape in document.shapes.reversed() where document.selectedIDs.contains(shape.id) {
+            let rects = resizeHandleRects[shape.id] ?? calculatedResizeHandleRects(for: shape)
+            for handle in ResizeHandle.allCases {
+                if rects[handle]?.contains(point) == true {
+                    return (shape, handle)
+                }
+            }
+        }
+        return nil
+    }
+
+    private func startResize(for shape: CADShape, handle: ResizeHandle, at point: CGPoint) {
+        if dimensionEditor != nil { dismissDimensionEditor() }
+
+        isResizing = true
+        resizingShapeID = shape.id
+        resizingHandle = handle
+        resizeStartShape = shape
+        activeConstructionGuides = []
+        document.beginResize()
+        resizeCursor(for: shape, handle: handle).set()
+    }
+
+    private func updateResize(to point: CGPoint, event: NSEvent) {
+        guard let id = resizingShapeID,
+              let handle = resizingHandle,
+              let startShape = resizeStartShape else { return }
+
+        let snap = event.modifierFlags.contains(.option)
+            ? (point: point, guides: [])
+            : snappedPoint(point, excluding: [id])
+        let resized = resizedBounds(for: startShape,
+                                    handle: handle,
+                                    to: snap.point,
+                                    preserveAspect: event.modifierFlags.contains(.shift))
+
+        document.resizeShape(id: id, to: resized)
+        activeConstructionGuides = snap.guides
+        needsDisplay = true
+    }
+
+    private func finishResize() {
+        document.commitResize()
+        isResizing = false
+        resizingShapeID = nil
+        resizingHandle = nil
+        resizeStartShape = nil
+        activeConstructionGuides = []
+        window?.resetCursorRects()
+        needsDisplay = true
     }
 
     private func startRotation(for shape: CADShape, at point: CGPoint) {
@@ -1068,14 +1527,76 @@ final class CADCanvasView: NSView {
 
     // MARK: - Cursor
 
+    private func resizeCursor(for shape: CADShape, handle: ResizeHandle) -> NSCursor {
+        let angle = CADShape.normalizedRotation(shape.rotationAngle + handle.cursorAngleOffset)
+        return Self.resizeCursor(angleDegrees: angle)
+    }
+
+    private static func resizeCursor(angleDegrees: Double) -> NSCursor {
+        let normalized = CADShape.normalizedRotation(angleDegrees)
+        let cacheKey = Int(round(normalized))
+        if let cursor = resizeCursorCache[cacheKey] { return cursor }
+
+        let size = CGSize(width: 32, height: 32)
+        let image = NSImage(size: size)
+        image.lockFocus()
+
+        if let ctx = NSGraphicsContext.current?.cgContext {
+            ctx.setLineCap(.round)
+            ctx.setLineJoin(.round)
+            ctx.translateBy(x: size.width / 2, y: size.height / 2)
+            ctx.rotate(by: CGFloat(normalized * Double.pi / 180))
+
+            func strokeArrow(color: NSColor, lineWidth: CGFloat) {
+                ctx.setStrokeColor(color.cgColor)
+                ctx.setLineWidth(lineWidth)
+                ctx.beginPath()
+                ctx.move(to: CGPoint(x: -10, y: 0))
+                ctx.addLine(to: CGPoint(x: 10, y: 0))
+                ctx.move(to: CGPoint(x: 5, y: -5))
+                ctx.addLine(to: CGPoint(x: 10, y: 0))
+                ctx.addLine(to: CGPoint(x: 5, y: 5))
+                ctx.move(to: CGPoint(x: -5, y: -5))
+                ctx.addLine(to: CGPoint(x: -10, y: 0))
+                ctx.addLine(to: CGPoint(x: -5, y: 5))
+                ctx.strokePath()
+            }
+
+            strokeArrow(color: .white, lineWidth: 5)
+            strokeArrow(color: .black, lineWidth: 2.2)
+        }
+
+        image.unlockFocus()
+
+        let cursor = NSCursor(image: image, hotSpot: CGPoint(x: size.width / 2, y: size.height / 2))
+        resizeCursorCache[cacheKey] = cursor
+        return cursor
+    }
+
     override func resetCursorRects() {
-        if isPanning {
+        if isResizing {
+            if let id = resizingShapeID,
+               let handle = resizingHandle,
+               let shape = document.shapes.first(where: { $0.id == id }) {
+                addCursorRect(bounds, cursor: resizeCursor(for: shape, handle: handle))
+            } else {
+                addCursorRect(bounds, cursor: .crosshair)
+            }
+        } else if isPanning {
             addCursorRect(bounds, cursor: .closedHand)
         } else if isSpaceDown {
             addCursorRect(bounds, cursor: .openHand)
         } else {
             addCursorRect(bounds, cursor: document.currentTool == .select ? .arrow : .crosshair)
             if document.currentTool == .select {
+                for shape in document.shapes where document.selectedIDs.contains(shape.id) {
+                    let rects = resizeHandleRects[shape.id] ?? calculatedResizeHandleRects(for: shape)
+                    for handle in ResizeHandle.allCases {
+                        if let rect = rects[handle] {
+                            addCursorRect(rect, cursor: resizeCursor(for: shape, handle: handle))
+                        }
+                    }
+                }
                 for rect in rotationHandleRects.values {
                     addCursorRect(rect, cursor: .openHand)
                 }

@@ -4,8 +4,12 @@ import SwiftUI
 struct SimpleCADApp: App {
     @StateObject private var document = CADDocument()
 
+    init() {
+        WindowTabPolicy.disableApplicationTabs()
+    }
+
     var body: some Scene {
-        WindowGroup {
+        Window("SimpleCAD", id: "main") {
             ContentView()
                 .environmentObject(document)
                 .onOpenURL { url in document.open(url: url) }

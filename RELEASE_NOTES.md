@@ -2,6 +2,44 @@
 
 ---
 
+## v2.4.0 — 22 mai 2026
+
+Version centrée sur les transformations avancées, les guides de construction magnétiques et les finitions de fenêtre.
+
+### Transformations
+
+- Redimensionnement interactif des formes depuis les quatre coins
+- Redimensionnement depuis les centres des bords pour ajuster uniquement la largeur ou la hauteur
+- Transformations compatibles avec les formes tournées, avec conservation du point opposé comme ancrage
+- Maintien de **Maj** pendant une transformation pour conserver les proportions
+- Curseurs double-flèche adaptés à chaque poignée : horizontal, vertical ou diagonal
+- Orientation des curseurs de transformation synchronisée avec la rotation de la forme
+- Historique dédié aux transformations, compatible avec Annuler / Rétablir
+
+### Guides de construction
+
+- Nouveaux guides magnétiques pendant le déplacement des formes
+- Alignement vertical et horizontal sur les centres et les coins des formes voisines
+- Alignement magnétique du coin manipulé pendant le redimensionnement
+- Guides visibles en temps réel pour matérialiser l'alignement actif
+- Maintien de **Option** pendant le geste pour désactiver temporairement le magnétisme
+- Déplacement multi-sélection stabilisé à partir de la position initiale du geste
+
+### Interface
+
+- Fenêtre principale sans gestion native des onglets macOS
+- Commandes système liées aux onglets retirées des menus
+- Panneau droit corrigé avec coins arrondis effectifs
+- Section **Plan de travail** intégrée au liquid glass sans fond opaque dédié
+- Fond des boutons rouge/jaune/vert masqué automatiquement en mode plein écran
+
+### Configuration requise
+
+- macOS 26 ou ultérieur
+- Architecture Apple Silicon ou Intel
+
+---
+
 ## v2.3.0 — 22 mai 2026
 
 Version centrée sur l'organisation des contrôles du plan de travail et les finitions de la toolbar.
