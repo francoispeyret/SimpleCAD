@@ -19,6 +19,11 @@ final class CADCanvasView: NSView {
 
     private var isDragging  = false
     private var lastDragPt  = CGPoint.zero
+    private var isMarqueeSelecting = false
+    private var marqueeStart = CGPoint.zero
+    private var marqueeRect = CGRect.zero
+    private var marqueeBaseSelection: Set<UUID> = []
+    private var marqueeAddsToSelection = false
 
     // MARK: - Pan state (espace + glisser)
 
@@ -56,7 +61,8 @@ final class CADCanvasView: NSView {
     private let dimExtend:   CGFloat = 6   // extension line overshoot
     private let rotationHandleSize: CGFloat = 18
     private let rotationHandleOffset: CGFloat = 34
-    private let rulerThickness: CGFloat = 38
+    private let horizontalRulerHeight: CGFloat = 38 * 0.34
+    private let verticalRulerWidth: CGFloat = 38 * 0.34
     private let rulerMajorTargetSpacing: CGFloat = 132
     private let rulerMinorDivisions: CGFloat = 5
 
@@ -180,6 +186,8 @@ final class CADCanvasView: NSView {
             drawRotationHandle(shape, ctx: ctx)
         }
 
+        if isMarqueeSelecting { drawSelectionMarquee(ctx: ctx) }
+
         drawRulers(ctx: ctx)
     }
 
@@ -228,6 +236,24 @@ final class CADCanvasView: NSView {
         let path = shape.bezierPath(); path.lineWidth = 1.5 * z
         let dash: [CGFloat] = [5 * z, 3 * z]; path.setLineDash(dash, count: 2, phase: 0)
         NSColor.systemBlue.setStroke(); path.stroke()
+        ctx.restoreGState()
+    }
+
+    private func drawSelectionMarquee(ctx: CGContext) {
+        guard marqueeRect.width > 0, marqueeRect.height > 0 else { return }
+
+        ctx.saveGState()
+        let z = invZoom
+        let rect = marqueeRect.standardized
+
+        NSColor.systemBlue.withAlphaComponent(isDarkAppearance ? 0.16 : 0.10).setFill()
+        NSBezierPath(rect: rect).fill()
+
+        let path = NSBezierPath(rect: rect)
+        path.lineWidth = 1.2 * z
+        path.setLineDash([6 * z, 3 * z], count: 2, phase: 0)
+        NSColor.systemBlue.setStroke()
+        path.stroke()
         ctx.restoreGState()
     }
 
@@ -410,13 +436,14 @@ final class CADCanvasView: NSView {
         ctx.setShouldAntialias(true)
 
         let z = invZoom
-        let thickness = rulerThickness * z
+        let horizontalHeight = horizontalRulerHeight * z
+        let verticalWidth = verticalRulerWidth * z
         let horizontalRect = CGRect(x: visible.minX, y: visible.minY,
-                                    width: visible.width, height: thickness)
+                                    width: visible.width, height: horizontalHeight)
         let verticalRect = CGRect(x: visible.minX, y: visible.minY,
-                                  width: thickness, height: visible.height)
+                                  width: verticalWidth, height: visible.height)
         let cornerRect = CGRect(x: visible.minX, y: visible.minY,
-                                width: thickness, height: thickness)
+                                width: verticalWidth, height: horizontalHeight)
 
         rulerBackgroundColor.setFill()
         NSBezierPath(rect: horizontalRect).fill()
@@ -449,7 +476,7 @@ final class CADCanvasView: NSView {
             let midRatio = value / (majorStep / 2)
             let isMajor = abs(majorRatio.rounded() - majorRatio) < 0.001
             let isMid = !isMajor && abs(midRatio.rounded() - midRatio) < 0.001
-            let tickLength = (isMajor ? 16 : (isMid ? 10 : 5)) * z
+            let tickLength = rect.height * (isMajor ? 0.55 : (isMid ? 0.38 : 0.24))
             let baseline = rect.maxY
 
             rulerTickColor.setStroke()
@@ -461,7 +488,7 @@ final class CADCanvasView: NSView {
 
             if isMajor {
                 drawRulerLabel(document.unit.formatValue(Double(value)),
-                               at: CGPoint(x: value + 6 * z, y: rect.minY + 7 * z),
+                               at: CGPoint(x: value + 4 * z, y: rect.minY + 1.5 * z),
                                vertical: false)
             }
 
@@ -480,7 +507,7 @@ final class CADCanvasView: NSView {
             let midRatio = value / (majorStep / 2)
             let isMajor = abs(majorRatio.rounded() - majorRatio) < 0.001
             let isMid = !isMajor && abs(midRatio.rounded() - midRatio) < 0.001
-            let tickLength = (isMajor ? 16 : (isMid ? 10 : 5)) * z
+            let tickLength = rect.width * (isMajor ? 0.55 : (isMid ? 0.38 : 0.24))
             let baseline = rect.maxX
 
             rulerTickColor.setStroke()
@@ -492,7 +519,7 @@ final class CADCanvasView: NSView {
 
             if isMajor {
                 drawRulerLabel(document.unit.formatValue(Double(value)),
-                               at: CGPoint(x: rect.minX + 18 * z, y: value + 6 * z),
+                               at: CGPoint(x: rect.midX, y: value + 4 * z),
                                vertical: true)
             }
 
@@ -520,7 +547,7 @@ final class CADCanvasView: NSView {
     private func drawRulerLabel(_ text: String, at point: CGPoint, vertical: Bool) {
         let z = invZoom
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 12 * z, weight: .medium),
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 8 * z, weight: .medium),
             .foregroundColor: rulerLabelColor
         ]
         let string = NSAttributedString(string: text, attributes: attrs)
@@ -542,10 +569,11 @@ final class CADCanvasView: NSView {
     private func rulerRects() -> (horizontal: CGRect, vertical: CGRect)? {
         let visible = enclosingScrollView?.contentView.documentVisibleRect ?? bounds
         guard visible.width > 0, visible.height > 0 else { return nil }
-        let thickness = rulerThickness * invZoom
+        let horizontalHeight = horizontalRulerHeight * invZoom
+        let verticalWidth = verticalRulerWidth * invZoom
         return (
-            CGRect(x: visible.minX, y: visible.minY, width: visible.width, height: thickness),
-            CGRect(x: visible.minX, y: visible.minY, width: thickness, height: visible.height)
+            CGRect(x: visible.minX, y: visible.minY, width: visible.width, height: horizontalHeight),
+            CGRect(x: visible.minX, y: visible.minY, width: verticalWidth, height: visible.height)
         )
     }
 
@@ -827,7 +855,9 @@ final class CADCanvasView: NSView {
         let pt = convert(event.locationInWindow, from: nil)
 
         if document.currentTool == .select {
-            if isDragging, !document.selectedIDs.isEmpty {
+            if isMarqueeSelecting {
+                updateSelectionMarquee(to: pt)
+            } else if isDragging, !document.selectedIDs.isEmpty {
                 let delta = CGSize(width: pt.x - lastDragPt.x, height: pt.y - lastDragPt.y)
                 document.moveSelectedShapes(by: delta)
                 lastDragPt = pt
@@ -863,8 +893,12 @@ final class CADCanvasView: NSView {
         }
 
         if document.currentTool == .select {
-            document.commitMove()
-            isDragging = false
+            if isMarqueeSelecting {
+                finishSelectionMarquee()
+            } else {
+                document.commitMove()
+                isDragging = false
+            }
         } else if isDrawing {
             isDrawing = false
             if currentRect.width > 4, currentRect.height > 4 {
@@ -885,13 +919,64 @@ final class CADCanvasView: NSView {
     private func handleSelectDown(pt: CGPoint, event: NSEvent) {
         let hit = document.shapes.reversed().first { $0.contains(pt) }
         if let shape = hit {
-            document.selectShape(id: shape.id, additive: event.modifierFlags.contains(.shift))
+            cancelSelectionMarquee()
+            if !document.selectedIDs.contains(shape.id) {
+                document.selectShape(id: shape.id, additive: event.modifierFlags.contains(.shift))
+            }
             isDragging = true; lastDragPt = pt
             document.beginMove()
         } else {
-            document.deselectAll()
+            startSelectionMarquee(at: pt, additive: event.modifierFlags.contains(.shift))
         }
         needsDisplay = true
+    }
+
+    private func startSelectionMarquee(at point: CGPoint, additive: Bool) {
+        isDragging = false
+        marqueeStart = point
+        marqueeRect = CGRect(origin: point, size: .zero)
+        marqueeBaseSelection = document.selectedIDs
+        marqueeAddsToSelection = additive
+        isMarqueeSelecting = true
+        if !additive { document.deselectAll() }
+    }
+
+    private func updateSelectionMarquee(to point: CGPoint) {
+        marqueeRect = CGRect(
+            x: min(marqueeStart.x, point.x),
+            y: min(marqueeStart.y, point.y),
+            width: abs(point.x - marqueeStart.x),
+            height: abs(point.y - marqueeStart.y)
+        )
+        needsDisplay = true
+    }
+
+    private func finishSelectionMarquee() {
+        defer {
+            isMarqueeSelecting = false
+            marqueeRect = .zero
+            marqueeBaseSelection = []
+            marqueeAddsToSelection = false
+            needsDisplay = true
+        }
+
+        guard marqueeRect.width > 4 * invZoom, marqueeRect.height > 4 * invZoom else {
+            if marqueeAddsToSelection { document.selectedIDs = marqueeBaseSelection }
+            return
+        }
+
+        let rect = marqueeRect.standardized
+        let selected = Set(document.shapes.compactMap { shape in
+            shape.visualBounds.standardized.intersects(rect) ? shape.id : nil
+        })
+        document.selectedIDs = marqueeAddsToSelection ? marqueeBaseSelection.union(selected) : selected
+    }
+
+    private func cancelSelectionMarquee() {
+        isMarqueeSelecting = false
+        marqueeRect = .zero
+        marqueeBaseSelection = []
+        marqueeAddsToSelection = false
     }
 
     private func startRotation(for shape: CADShape, at point: CGPoint) {

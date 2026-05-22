@@ -4,6 +4,7 @@ import AppKit
 private let toolbarLeftMargin: CGFloat = 42
 private let toolbarRightMargin: CGFloat = 6
 private let sidebarWidth: CGFloat = 260
+private let trafficLightBackdropSize = CGSize(width: 80, height: 32)
 
 struct ContentView: View {
     @EnvironmentObject var document: CADDocument
@@ -16,6 +17,14 @@ struct ContentView: View {
                 // ── Couche 0 : canvas plein écran ─────────────────
                 CanvasScrollView()
                     .frame(width: geo.size.width, height: geo.size.height)
+
+                // ── Couche 0.5 : fond des boutons de fenêtre ──────
+                TrafficLightBackdrop()
+                    .frame(width: trafficLightBackdropSize.width,
+                           height: trafficLightBackdropSize.height)
+                    .padding(.top, 0)
+                    .padding(.leading, 0)
+                    .allowsHitTesting(false)
 
                 // ── Couche 1 : toolbar (bord gauche, verticale) ───
                 GlassEffectContainer {
@@ -127,6 +136,16 @@ struct ContentView: View {
         return false
     }
 }
+
+// MARK: - TrafficLightBackdrop
+
+private struct TrafficLightBackdrop: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+        .fill(Color(NSColor.windowBackgroundColor))
+    }
+}
+
 // MARK: - SidebarView
 
 private enum SidebarTab { case layers, history }

@@ -2,6 +2,37 @@
 
 ---
 
+## v2.2.0 — 22 mai 2026
+
+Version centrée sur la sélection multiple et les finitions d'interface.
+
+### Sélection multiple
+
+- Nouveau rectangle de sélection avec l'outil **Sélection** : clic-glisser depuis une zone vide du canvas
+- Sélection automatique de toutes les formes croisées par le rectangle, y compris les formes tournées
+- Maintien de **Maj** pendant le rectangle de sélection pour ajouter au groupe sélectionné
+- Déplacement groupé : glisser une forme déjà sélectionnée déplace désormais toutes les formes de la sélection
+
+### Interface
+
+- Icône de l'outil **Sélection** remplacée par un curseur de souris simplifié
+- Fond dédié derrière les boutons rouge/jaune/vert de la fenêtre
+- Fond des boutons de fenêtre adapté au mode clair/sombre système
+- Coins arrondis sur le fond des boutons de fenêtre
+
+### Plan de travail
+
+- Règle horizontale réduite de 66 % en hauteur
+- Règle verticale réduite de 66 % en largeur
+- Graduations et labels des règles ajustés pour rester lisibles dans leur format compact
+
+### Configuration requise
+
+- macOS 26 ou ultérieur
+- Architecture Apple Silicon ou Intel
+
+---
+
 ## v2.1.0 — 22 mai 2026
 
 Version centrée sur le confort d'édition, les repères visuels et la gestion de l'ordre des formes.

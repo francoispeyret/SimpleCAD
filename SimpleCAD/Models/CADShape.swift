@@ -103,7 +103,7 @@ enum Tool: String, CaseIterable, Identifiable {
 
     var sfSymbol: String {
         switch self {
-        case .select:    return "arrow.up.left"
+        case .select:    return "cursorarrow"
         case .rectangle: return "rectangle"
         case .square:    return "square"
         case .circle:    return "circle"
