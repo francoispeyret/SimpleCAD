@@ -29,15 +29,6 @@ struct ToolbarView: View {
 
             separator
 
-            // ── Options ──────────────────────────────────────────
-            optionGroup
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-
-            Spacer()
-
-            separator
-
             // ── Actions fichier (bas) ─────────────────────────────
             fileGroup
                 .padding(.horizontal, 16)
@@ -148,51 +139,17 @@ struct ToolbarView: View {
         String(format: "%.0f%%", document.zoomLevel * 100)
     }
 
-    // MARK: - Options
-
-    private var optionGroup: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Toggle(isOn: $document.showGrid) {
-                Label("Grille", systemImage: "grid")
-                    .font(.system(size: 12))
-            }
-            .toggleStyle(.checkbox)
-
-            Toggle(isOn: $document.showDimensions) {
-                Label("Cotes", systemImage: "ruler")
-                    .font(.system(size: 12))
-            }
-            .toggleStyle(.checkbox)
-
-            unitPicker
-        }
-    }
-
-    private var unitPicker: some View {
-        HStack(spacing: 5) {
-            Image(systemName: "ruler.fill")
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
-            Picker("", selection: $document.unit) {
-                ForEach(DocumentUnit.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.menu)
-            .frame(width: 60)
-            .labelsHidden()
-        }
-    }
-
     // MARK: - Actions fichier (bas)
 
     private var fileGroup: some View {
         VStack(spacing: 8) {
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 ActionButton(icon: "arrow.uturn.backward", tip: "Annuler (⌘Z)",
                              disabled: !document.canUndo)                      { document.undo() }
                 ActionButton(icon: "arrow.uturn.forward",  tip: "Rétablir (⌘⇧Z)",
                              disabled: !document.canRedo)                      { document.redo() }
-                Spacer()
             }
+            .frame(maxWidth: .infinity, alignment: .center)
         }
     }
 }
@@ -297,8 +254,8 @@ private struct ColorSwatch: View {
                     .fill(Color(color.nsColor))
                 RoundedRectangle(cornerRadius: 6)
                     .strokeBorder(
-                        Color(NSColor.separatorColor).opacity(isHovering ? 0.8 : 0.4),
-                        lineWidth: 1.5
+                        Color(NSColor.systemGray).opacity(isHovering ? 0.9 : 0.65),
+                        lineWidth: 1
                     )
             }
             .frame(maxWidth: .infinity)

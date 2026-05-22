@@ -55,7 +55,6 @@ final class CADCanvasView: NSView {
 
     // MARK: - Constants
 
-    private let gridSpacing: CGFloat = 20
     private let handleSize:  CGFloat = 7
     private let dimOffset:   CGFloat = 28  // px from shape edge to dim line
     private let dimExtend:   CGFloat = 6   // extension line overshoot
@@ -68,6 +67,8 @@ final class CADCanvasView: NSView {
 
     // Facteur inverse du zoom : maintient les éléments graphiques à taille constante à l'écran.
     private var invZoom: CGFloat { CGFloat(1.0 / max(document.zoomLevel, 0.01)) }
+
+    private var gridSpacing: CGFloat { document.gridDisplayMode.spacing }
 
     var surroundingBackgroundColor: NSColor {
         isDarkAppearance ? NSColor(calibratedWhite: 0.055, alpha: 1)
@@ -168,7 +169,7 @@ final class CADCanvasView: NSView {
         canvasBackgroundColor.setFill()
         bounds.fill()
 
-        if document.showGrid { drawGrid(ctx: ctx) }
+        if document.gridDisplayMode != .none { drawGrid(ctx: ctx) }
 
         for shape in document.shapes { drawShape(shape, ctx: ctx) }
 
@@ -179,9 +180,13 @@ final class CADCanvasView: NSView {
         heightHitRects.removeAll()
         rotationHandleRects.removeAll()
 
+        for shape in document.shapes where shouldDrawDimensions(for: shape) && !document.selectedIDs.contains(shape.id) {
+            drawDimensions(shape, ctx: ctx)
+        }
+
         for shape in document.shapes where document.selectedIDs.contains(shape.id) {
             drawSelectionBorder(shape, ctx: ctx)
-            if document.showDimensions { drawDimensions(shape, ctx: ctx) }
+            if shouldDrawDimensions(for: shape) { drawDimensions(shape, ctx: ctx) }
             drawHandles(shape, ctx: ctx)
             drawRotationHandle(shape, ctx: ctx)
         }
@@ -194,9 +199,11 @@ final class CADCanvasView: NSView {
     // MARK: - Grid
 
     private func drawGrid(ctx: CGContext) {
+        guard gridSpacing > 0 else { return }
+
         ctx.saveGState()
         ctx.setStrokeColor(gridColor.cgColor)
-        ctx.setLineWidth(0.5)
+        ctx.setLineWidth(document.gridDisplayMode == .wide ? 0.65 : 0.5)
         var x: CGFloat = 0
         while x <= bounds.width  { ctx.move(to: CGPoint(x: x, y: 0)); ctx.addLine(to: CGPoint(x: x, y: bounds.height)); x += gridSpacing }
         var y: CGFloat = 0
@@ -279,6 +286,17 @@ final class CADCanvasView: NSView {
     }
 
     // MARK: - Dimension annotations
+
+    private func shouldDrawDimensions(for shape: CADShape) -> Bool {
+        switch document.dimensionDisplayMode {
+        case .none:
+            return false
+        case .selected:
+            return document.selectedIDs.contains(shape.id)
+        case .all:
+            return true
+        }
+    }
 
     private func drawDimensions(_ shape: CADShape, ctx: CGContext) {
         let b = shape.bounds.standardized
@@ -796,9 +814,9 @@ final class CADCanvasView: NSView {
             }
         }
 
-        // ── Dimension label hit test (only when a shape is selected) ──
-        if document.showDimensions {
-            for shape in document.shapes where document.selectedIDs.contains(shape.id) {
+        // ── Dimension label hit test (only visible dimension labels) ──
+        if document.dimensionDisplayMode != .none {
+            for shape in document.shapes.reversed() where shouldDrawDimensions(for: shape) {
                 if let r = widthHitRects[shape.id],  r.contains(pt) {
                     showDimensionEditor(for: shape, axis: .width);  return
                 }

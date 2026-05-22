@@ -34,9 +34,7 @@ struct ContentView: View {
                 .padding(.top, 44)
                 .padding(.leading, toolbarLeftMargin)
                 .padding(.trailing, toolbarRightMargin)
-                .padding(.bottom, 28)
                 .frame(width: toolbarWidth + toolbarLeftMargin + toolbarRightMargin,
-                       height: geo.size.height,
                        alignment: .leading)
 
                 // ── Couche 2 : sidebar (bord droit) ──────────────
@@ -48,7 +46,7 @@ struct ContentView: View {
                     }
                     .padding(.top, 44)
                     .padding(.leading, 6)
-                    .padding(.trailing, 15)
+                    .padding(.trailing, 28)
                     .padding(.bottom, 28)
                     .frame(width: sidebarWidth, height: geo.size.height)
                 }
@@ -155,6 +153,9 @@ private struct SidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            SidebarCanvasOptionsView()
+
+            Divider()
 
             // ── Sélecteur d'onglet ────────────────────────────────
             HStack(spacing: 6) {
@@ -174,6 +175,148 @@ private struct SidebarView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+}
+
+// MARK: - SidebarCanvasOptionsView
+
+private struct SidebarCanvasOptionsView: View {
+    @EnvironmentObject var document: CADDocument
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Plan de travail")
+                .font(.system(size: 12, weight: .semibold))
+
+            gridModeMenu
+            dimensionModeMenu
+            unitPicker
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 10)
+        .padding(.bottom, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(NSColor.windowBackgroundColor))
+    }
+
+    private var gridModeMenu: some View {
+        LabeledSidebarControl(label: "Grille") {
+            Menu {
+                ForEach(GridDisplayMode.allCases) { mode in
+                    Button {
+                        document.gridDisplayMode = mode
+                    } label: {
+                        HStack {
+                            Text(mode.title)
+                            if document.gridDisplayMode == mode {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                SidebarMenuLabel(
+                    icon: document.gridDisplayMode.sfSymbol,
+                    title: document.gridDisplayMode.shortTitle
+                )
+            }
+            .buttonStyle(.plain)
+            .help("Afficher la grille")
+        }
+    }
+
+    private var dimensionModeMenu: some View {
+        LabeledSidebarControl(label: "Cotes") {
+            Menu {
+                ForEach(DimensionDisplayMode.allCases) { mode in
+                    Button {
+                        document.dimensionDisplayMode = mode
+                    } label: {
+                        HStack {
+                            Text(mode.title)
+                            if document.dimensionDisplayMode == mode {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                SidebarMenuLabel(
+                    icon: document.dimensionDisplayMode.sfSymbol,
+                    title: document.dimensionDisplayMode.shortTitle
+                )
+            }
+            .buttonStyle(.plain)
+            .help("Afficher les cotes")
+        }
+    }
+
+    private var unitPicker: some View {
+        LabeledSidebarControl(label: "Dimensions") {
+            Menu {
+                ForEach(DocumentUnit.allCases) { unit in
+                    Button {
+                        document.unit = unit
+                    } label: {
+                        HStack {
+                            Text(unit.rawValue)
+                            if document.unit == unit {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                SidebarMenuLabel(
+                    icon: "ruler.fill",
+                    title: document.unit.rawValue
+                )
+            }
+            .buttonStyle(.plain)
+            .help("Choisir l'unité des dimensions")
+        }
+    }
+}
+
+private struct LabeledSidebarControl<Content: View>: View {
+    let label: String
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+            content
+        }
+    }
+}
+
+private struct SidebarMenuLabel: View {
+    let icon: String
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .medium))
+                .frame(width: 14)
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundColor(.secondary)
+        }
+        .foregroundColor(.primary)
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity)
+        .frame(height: 28)
+        .background(
+            RoundedRectangle(cornerRadius: 7)
+                .fill(Color(NSColor.controlColor))
+        )
     }
 }
 

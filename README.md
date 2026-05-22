@@ -33,6 +33,7 @@ SimpleCAD est un éditeur de formes géométriques 2D orienté dessin technique.
 - **Zoom** — `⌘+` / `⌘-` / `⌘0` (clavier principal et pavé numérique), boutons dans la barre d'outils, pinch trackpad
 - **Pan** — Maintenir `Espace` + glisser
 - **Déplacer une sélection** — Touches fléchées (1 px par pression)
+- **Grille** — menu du panneau droit avec les modes **Aucune grille**, **Grille par défaut** et **Grille large**
 
 ### Propriétés des formes
 - Couleur de remplissage et couleur de contour (sélecteur de couleur macOS)
@@ -40,7 +41,7 @@ SimpleCAD est un éditeur de formes géométriques 2D orienté dessin technique.
 - Application instantanée à la sélection courante
 
 ### Annotations dimensionnelles
-Lorsque l'option **Cotes** est activée, chaque forme sélectionnée affiche ses dimensions (largeur et hauteur) sous forme de cotation avec flèches. **Cliquer sur une cote** ouvre un champ de saisie inline pour entrer la valeur directement dans l'unité choisie (virgule ou point acceptés comme séparateur décimal).
+Le menu **Cotes** permet de choisir entre **Aucune côte**, **Côte sur l'élément sélectionné** et **Côte sur tous les éléments**. Les dimensions (largeur et hauteur) s'affichent sous forme de cotation avec flèches. **Cliquer sur une cote visible** ouvre un champ de saisie inline pour entrer la valeur directement dans l'unité choisie (virgule ou point acceptés comme séparateur décimal).
 
 ### Gestion des calques
 La barre latérale liste les calques dans l'ordre de rendu (le dernier dessiné en haut) :
@@ -57,7 +58,7 @@ L'onglet **Historique** de la barre latérale affiche une chronologie visuelle d
 | Rétablir | `⌘⇧Z` |
 
 ### Unités
-8 unités disponibles via le sélecteur dans la barre d'outils : **mm, cm, m, km, in, ft, yd, mi**. Toutes les cotes, la barre de statut et les badges de la liste de calques s'expriment dans l'unité choisie. La conversion interne est basée sur 96 DPI (standard SVG : 1 in = 96 px).
+8 unités disponibles via le sélecteur **Dimensions** du panneau droit : **mm, cm, m, km, in, ft, yd, mi**. Toutes les cotes, la barre de statut et les badges de la liste de calques s'expriment dans l'unité choisie. La conversion interne est basée sur 96 DPI (standard SVG : 1 in = 96 px).
 
 ### Fichiers
 - **Nouveau** `⌘N` — réinitialise le document

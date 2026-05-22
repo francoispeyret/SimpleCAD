@@ -2,6 +2,34 @@
 
 ---
 
+## v2.3.0 — 22 mai 2026
+
+Version centrée sur l'organisation des contrôles du plan de travail et les finitions de la toolbar.
+
+### Plan de travail
+
+- Nouveau menu **Grille** dans le panneau droit avec les modes **Aucune grille**, **Grille par défaut** et **Grille large**
+- Nouveau menu **Cotes** avec les modes **Aucune côte**, **Côte sur l'élément sélectionné** et **Côte sur tous les éléments**
+- Le mode **Côte sur tous les éléments** affiche les cotations sur toutes les formes du canvas
+- Les cotes visibles restent éditables au clic, y compris lorsque toutes les formes sont cotées
+- Menu **Dimensions** uniformisé avec les menus Grille et Cotes
+
+### Interface
+
+- Déplacement des contrôles Grille, Cotes et Dimensions dans la première section du panneau droit
+- Toolbar gauche réduite à la hauteur nécessaire pour ses boutons
+- Boutons Annuler / Rétablir centrés dans la toolbar
+- Bordure grise fine ajoutée aux boutons de sélection de couleur
+- Nouvelle icône d'application intégrée dans l'asset catalog
+- README mis à jour avec l'icône d'application en 256 × 256 px
+
+### Configuration requise
+
+- macOS 26 ou ultérieur
+- Architecture Apple Silicon ou Intel
+
+---
+
 ## v2.2.0 — 22 mai 2026
 
 Version centrée sur la sélection multiple et les finitions d'interface.

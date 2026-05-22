@@ -25,8 +25,8 @@ class CADDocument: ObservableObject {
     static let defaultCanvasSize = CGSize(width: 16_000, height: 16_000)
 
     @Published var canvasSize:       CGSize      = CADDocument.defaultCanvasSize
-    @Published var showGrid:         Bool        = true
-    @Published var showDimensions:   Bool        = true
+    @Published var gridDisplayMode:  GridDisplayMode = .standard
+    @Published var dimensionDisplayMode: DimensionDisplayMode = .selected
     @Published var unit:             DocumentUnit = .mm
     @Published var isDirty:          Bool        = false
     @Published var zoomLevel:        Double      = 1.0
