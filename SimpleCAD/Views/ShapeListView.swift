@@ -1,12 +1,15 @@
 import SwiftUI
-import UniformTypeIdentifiers
+
+private let shapeRowHeight: CGFloat = 42
+private let shapeListCoordinateSpace = "ShapeListReorderSpace"
 
 struct ShapeListView: View {
     @EnvironmentObject var document: CADDocument
     @State private var editingID:    UUID? = nil
     @State private var editingName:  String = ""
     @State private var draggingID:   UUID? = nil
-    @State private var dropTargetID: UUID? = nil
+    @State private var dropTarget:   ShapeDropTarget? = nil
+    @State private var rowFrames:    [UUID: CGRect] = [:]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -44,7 +47,7 @@ struct ShapeListView: View {
                                 isEditing:    editingID == shape.id,
                                 editingName:  $editingName,
                                 isDragging:   draggingID == shape.id,
-                                isDropTarget: dropTargetID == shape.id,
+                                dropPlacement: dropTarget?.id == shape.id ? dropTarget?.placement : nil,
                                 onTap: {
                                     if editingID != shape.id { document.selectShape(id: shape.id) }
                                 },
@@ -55,27 +58,16 @@ struct ShapeListView: View {
                                 onRenameCommit: { commitRename(id: shape.id) },
                                 onRenameCancel: { editingID = nil }
                             )
-                            // ── Drag source ──────────────────────────
-                            .onDrag {
-                                draggingID = shape.id
-                                return NSItemProvider(object: shape.id.uuidString as NSString)
-                            }
-                            // ── Drop target ──────────────────────────
-                            .onDrop(
-                                of: [UTType.plainText],
-                                delegate: ShapeDropDelegate(
-                                    targetID:    shape.id,
-                                    document:    document,
-                                    draggingID:  $draggingID,
-                                    dropTargetID: $dropTargetID
-                                )
-                            )
+                            .background(rowFrameReader(for: shape.id))
+                            .simultaneousGesture(reorderGesture(for: shape.id))
 
                             Divider().padding(.leading, 8)
                         }
                     }
                     .padding(.vertical, 2)
                 }
+                .coordinateSpace(name: shapeListCoordinateSpace)
+                .onPreferenceChange(ShapeRowFramePreferenceKey.self) { rowFrames = $0 }
             }
 
             Divider()
@@ -119,6 +111,95 @@ struct ShapeListView: View {
         if !trimmed.isEmpty { document.renameShape(id: id, to: trimmed) }
         editingID = nil
     }
+
+    private func rowFrameReader(for id: UUID) -> some View {
+        GeometryReader { proxy in
+            Color.clear.preference(
+                key: ShapeRowFramePreferenceKey.self,
+                value: [id: proxy.frame(in: .named(shapeListCoordinateSpace))]
+            )
+        }
+    }
+
+    private func reorderGesture(for id: UUID) -> some Gesture {
+        DragGesture(minimumDistance: 4, coordinateSpace: .named(shapeListCoordinateSpace))
+            .onChanged { value in
+                guard editingID == nil, document.shapes.count > 1 else { return }
+
+                if draggingID == nil {
+                    draggingID = id
+                    document.selectShape(id: id)
+                }
+                guard draggingID == id else { return }
+
+                dropTarget = dropTarget(for: value.location, draggingID: id)
+            }
+            .onEnded { value in
+                guard editingID == nil else {
+                    clearDragState()
+                    return
+                }
+                let finalTarget = dropTarget(for: value.location, draggingID: id) ?? dropTarget
+
+                if let finalTarget {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        _ = document.moveShapeInDisplayOrder(
+                            id: id,
+                            relativeTo: finalTarget.id,
+                            insertAfterTarget: finalTarget.placement == .after
+                        )
+                    }
+                }
+                clearDragState()
+            }
+    }
+
+    private func dropTarget(for point: CGPoint, draggingID: UUID) -> ShapeDropTarget? {
+        let displayIDs = document.shapes.reversed().map(\.id)
+        let orderedFrames = displayIDs.compactMap { id -> (id: UUID, frame: CGRect)? in
+            guard let frame = rowFrames[id] else { return nil }
+            return (id, frame)
+        }
+
+        guard !orderedFrames.isEmpty else { return nil }
+
+        for entry in orderedFrames where entry.frame.contains(point) {
+            return dropTarget(
+                id: entry.id,
+                placement: point.y < entry.frame.midY ? .before : .after,
+                draggingID: draggingID
+            )
+        }
+
+        if let first = orderedFrames.first, point.y < first.frame.minY {
+            return dropTarget(id: first.id, placement: .before, draggingID: draggingID)
+        }
+
+        if let last = orderedFrames.last, point.y > last.frame.maxY {
+            return dropTarget(id: last.id, placement: .after, draggingID: draggingID)
+        }
+
+        for index in 0..<(orderedFrames.count - 1) {
+            let upper = orderedFrames[index]
+            let lower = orderedFrames[index + 1]
+            if point.y > upper.frame.maxY, point.y < lower.frame.minY {
+                return dropTarget(id: upper.id, placement: .after, draggingID: draggingID)
+            }
+        }
+
+        return nil
+    }
+
+    private func dropTarget(id: UUID,
+                            placement: ShapeDropPlacement,
+                            draggingID: UUID) -> ShapeDropTarget? {
+        id == draggingID ? nil : ShapeDropTarget(id: id, placement: placement)
+    }
+
+    private func clearDragState() {
+        draggingID = nil
+        dropTarget = nil
+    }
 }
 
 // MARK: - ShapeRow
@@ -129,7 +210,7 @@ private struct ShapeRow: View {
     let isEditing:       Bool
     @Binding var editingName: String
     let isDragging:      Bool
-    let isDropTarget:    Bool
+    let dropPlacement:   ShapeDropPlacement?
     let onTap:           () -> Void
     let onDoubleTap:     () -> Void
     let onRenameCommit:  () -> Void
@@ -190,10 +271,18 @@ private struct ShapeRow: View {
         }
         .padding(.vertical, 5)
         .padding(.horizontal, 8)
+        .frame(height: shapeRowHeight)
         .background(rowBackground)
-        // Drop indicator: blue line on top edge when this row is the drop target
+        // Indicateur de dépôt : ligne bleue au-dessus ou en-dessous de la cible.
         .overlay(alignment: .top) {
-            if isDropTarget {
+            if dropPlacement == .before {
+                Rectangle()
+                    .fill(Color.accentColor)
+                    .frame(height: 2)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if dropPlacement == .after {
                 Rectangle()
                     .fill(Color.accentColor)
                     .frame(height: 2)
@@ -219,51 +308,22 @@ private struct ShapeRow: View {
     }
 }
 
-// MARK: - DropDelegate
+// MARK: - Reorder helpers
 
-private struct ShapeDropDelegate: DropDelegate {
-    let targetID:     UUID
-    let document:     CADDocument
-    @Binding var draggingID:   UUID?
-    @Binding var dropTargetID: UUID?
+private enum ShapeDropPlacement {
+    case before
+    case after
+}
 
-    func validateDrop(info: DropInfo) -> Bool {
-        guard let src = draggingID else { return false }
-        return src != targetID
-    }
+private struct ShapeDropTarget: Equatable {
+    let id: UUID
+    let placement: ShapeDropPlacement
+}
 
-    func dropEntered(info: DropInfo) {
-        guard draggingID != nil, draggingID != targetID else { return }
-        withAnimation(.easeInOut(duration: 0.15)) { dropTargetID = targetID }
-    }
+private struct ShapeRowFramePreferenceKey: PreferenceKey {
+    static var defaultValue: [UUID: CGRect] = [:]
 
-    func dropExited(info: DropInfo) {
-        withAnimation(.easeInOut(duration: 0.15)) {
-            if dropTargetID == targetID { dropTargetID = nil }
-        }
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        defer {
-            draggingID   = nil
-            dropTargetID = nil
-        }
-
-        guard let fromID = draggingID,
-              let fromIdx = document.shapes.firstIndex(where: { $0.id == fromID }),
-              let toIdx   = document.shapes.firstIndex(where: { $0.id == targetID }),
-              fromIdx != toIdx
-        else { return false }
-
-        withAnimation {
-            let dest = toIdx > fromIdx ? toIdx + 1 : toIdx
-            document.shapes.move(fromOffsets: IndexSet(integer: fromIdx), toOffset: dest)
-            document.recordAction("Réorganisation calques")
-        }
-        return true
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
     }
 }

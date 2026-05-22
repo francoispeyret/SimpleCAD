@@ -1,10 +1,13 @@
 import SwiftUI
 import AppKit
 
+private let toolbarLeftMargin: CGFloat = 42
+private let toolbarRightMargin: CGFloat = 6
 private let sidebarWidth: CGFloat = 260
 
 struct ContentView: View {
     @EnvironmentObject var document: CADDocument
+    @State private var keyboardMonitor: Any?
 
     var body: some View {
         GeometryReader { geo in
@@ -20,10 +23,12 @@ struct ContentView: View {
                         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
                 }
                 .padding(.top, 44)
-                .padding(.leading, 15)
-                .padding(.trailing, 6)
+                .padding(.leading, toolbarLeftMargin)
+                .padding(.trailing, toolbarRightMargin)
                 .padding(.bottom, 28)
-                .frame(width: toolbarWidth, height: geo.size.height)
+                .frame(width: toolbarWidth + toolbarLeftMargin + toolbarRightMargin,
+                       height: geo.size.height,
+                       alignment: .leading)
 
                 // ── Couche 2 : sidebar (bord droit) ──────────────
                 HStack(spacing: 0) {
@@ -45,7 +50,13 @@ struct ContentView: View {
         .frame(minWidth: 960, minHeight: 680)
         .onAppear {
             maximiseWindow()
-            setupNumpadShortcuts()
+            setupKeyboardShortcuts()
+        }
+        .onDisappear {
+            if let keyboardMonitor {
+                NSEvent.removeMonitor(keyboardMonitor)
+                self.keyboardMonitor = nil
+            }
         }
     }
 
@@ -59,22 +70,63 @@ struct ContentView: View {
         }
     }
 
-    /// Intercepte Cmd+[+/-/0] du pavé numérique (.numericPad flag ignoré par keyboardShortcut).
-    private func setupNumpadShortcuts() {
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard event.modifierFlags.contains(.command),
-                  event.modifierFlags.contains(.numericPad)
-            else { return event }
-            switch event.charactersIgnoringModifiers {
-            case "+": document.zoomIn();    return nil
-            case "-": document.zoomOut();   return nil
-            case "0": document.resetZoom(); return nil
-            default:  return event
-            }
+    private func setupKeyboardShortcuts() {
+        guard keyboardMonitor == nil else { return }
+
+        keyboardMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if handleNumpadZoom(event) { return nil }
+            guard let tool = toolShortcut(for: event) else { return event }
+
+            document.currentTool = tool
+            document.deselectAll()
+            return nil
         }
     }
-}
 
+    /// Intercepte Cmd+[+/-/0] du pavé numérique (.numericPad flag ignoré par keyboardShortcut).
+    private func handleNumpadZoom(_ event: NSEvent) -> Bool {
+        guard event.modifierFlags.contains(.command),
+              event.modifierFlags.contains(.numericPad)
+        else { return false }
+
+        switch event.charactersIgnoringModifiers {
+        case "+": document.zoomIn();    return true
+        case "-": document.zoomOut();   return true
+        case "0": document.resetZoom(); return true
+        default:  return false
+        }
+    }
+
+    private func toolShortcut(for event: NSEvent) -> Tool? {
+        guard !isTextInputActive(),
+              event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
+              let key = event.charactersIgnoringModifiers?.lowercased()
+        else { return nil }
+
+        switch key {
+        case "v": return .select
+        case "r": return .rectangle
+        case "q": return .square
+        case "c": return .circle
+        case "e": return .ellipse
+        case "t": return .triangle
+        case "l": return .line
+        default:  return nil
+        }
+    }
+
+    private func isTextInputActive() -> Bool {
+        guard let responder = NSApp.keyWindow?.firstResponder else { return false }
+        if responder is NSTextView || responder is NSTextField { return true }
+
+        if let view = responder as? NSView {
+            return sequence(first: view, next: { $0.superview }).contains {
+                $0 is NSTextField || $0 is NSComboBox || $0 is NSSearchField
+            }
+        }
+        return false
+    }
+}
 // MARK: - SidebarView
 
 private enum SidebarTab { case layers, history }

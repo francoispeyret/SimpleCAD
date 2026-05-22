@@ -18,6 +18,7 @@ struct CanvasScrollRepresentable: NSViewRepresentable {
         scrollView.minMagnification    = 0.05
         scrollView.maxMagnification    = 16.0
         scrollView.magnification       = document.zoomLevel
+        scrollView.contentView.postsBoundsChangedNotifications = true
 
         let canvas = CADCanvasView()
         canvas.document = document
@@ -30,12 +31,21 @@ struct CanvasScrollRepresentable: NSViewRepresentable {
         scrollView.documentView = canvas
 
         // Réagir aux changements du document → redessiner
-        context.coordinator.cancellable = document.objectWillChange.sink { [weak canvas] _ in
+        let coordinator = context.coordinator
+        coordinator.cancellable = document.objectWillChange.sink { [weak canvas, weak coordinator] _ in
             DispatchQueue.main.async {
                 canvas?.frame = NSRect(origin: .zero, size: document.canvasSize)
                 canvas?.needsDisplay = true
+                coordinator?.invalidateCanvas()
             }
         }
+
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.scrollBoundsChanged(_:)),
+            name: NSView.boundsDidChangeNotification,
+            object: scrollView.contentView
+        )
 
         // Observer la magnification de l'utilisateur (pinch)
         NotificationCenter.default.addObserver(
@@ -79,6 +89,7 @@ struct CanvasScrollRepresentable: NSViewRepresentable {
             let clip   = scrollView.contentView.bounds
             let center = CGPoint(x: clip.midX, y: clip.midY)
             scrollView.setMagnification(document.zoomLevel, centeredAt: center)
+            coord.invalidateCanvas()
         }
 
         // Consommer zoomToFitBounds en priorité : il ajuste le zoom puis centre la vue.
@@ -109,6 +120,14 @@ struct CanvasScrollRepresentable: NSViewRepresentable {
         var lastAppliedZoom:       Double = 1.0
         var isUpdatingFromScrollView = false
 
+        deinit {
+            NotificationCenter.default.removeObserver(self)
+        }
+
+        func invalidateCanvas() {
+            canvasView?.needsDisplay = true
+        }
+
         func zoomToFit(_ rect: CGRect) {
             guard let sv = scrollView,
                   let doc = document else { return }
@@ -134,6 +153,7 @@ struct CanvasScrollRepresentable: NSViewRepresentable {
             sv.setMagnification(zoom, centeredAt: center)
             doc.zoomLevel = zoom
             scroll(to: center)
+            invalidateCanvas()
 
             DispatchQueue.main.async { [weak self] in
                 self?.isUpdatingFromScrollView = false
@@ -153,6 +173,7 @@ struct CanvasScrollRepresentable: NSViewRepresentable {
             let constrained = clip.constrainBoundsRect(targetRect)
             clip.scroll(to: constrained.origin)
             sv.reflectScrolledClipView(clip)
+            invalidateCanvas()
         }
 
         @objc func magnificationChanged(_ notification: Notification) {
@@ -164,7 +185,12 @@ struct CanvasScrollRepresentable: NSViewRepresentable {
             DispatchQueue.main.async { [weak self] in
                 doc.zoomLevel = zoom
                 self?.isUpdatingFromScrollView = false
+                self?.invalidateCanvas()
             }
+        }
+
+        @objc func scrollBoundsChanged(_ notification: Notification) {
+            invalidateCanvas()
         }
     }
 }

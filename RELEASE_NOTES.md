@@ -2,6 +2,38 @@
 
 ---
 
+## v2.1.0 — 22 mai 2026
+
+Version centrée sur le confort d'édition, les repères visuels et la gestion de l'ordre des formes.
+
+### Panneau des formes
+
+- Réordonnancement fiable des formes par glisser-déposer dans le panneau de droite
+- Indicateur d'insertion bleu au-dessus ou en-dessous de la forme ciblée pendant le glisser
+- Synchronisation immédiate entre l'ordre du panneau et l'ordre d'affichage dans le canvas
+- Historique dédié à la réorganisation des formes, compatible avec Annuler / Rétablir
+
+### Plan de travail
+
+- Ajout de règles horizontale et verticale autour du plan de travail
+- Règles synchronisées avec le scroll et le zoom du canvas
+- Lisibilité améliorée des graduations et des valeurs
+- Correction d'un problème où l'ajout des règles pouvait masquer les formes du canvas
+- Taille par défaut du canvas réduite à 16 000 × 16 000 px pour une navigation plus confortable
+
+### Interface et raccourcis
+
+- Marge gauche ajoutée autour du panneau d'outils pour mieux dégager la zone de travail
+- Raccourcis des outils de base corrigés : `V`, `R`, `Q`, `C`, `E`, `T`, `L`
+- Les raccourcis outils ignorent les champs de texte actifs pour préserver l'édition inline
+
+### Configuration requise
+
+- macOS 26 ou ultérieur
+- Architecture Apple Silicon ou Intel
+
+---
+
 ## v2.0.0 — 21 mai 2026
 
 Version centrée sur l'import SVG, la rotation des formes et l'intégration visuelle macOS 26.

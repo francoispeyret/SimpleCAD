@@ -22,7 +22,7 @@ class CADDocument: ObservableObject {
     @Published var fillColor:        CADColor    = .white
     @Published var strokeColor:      CADColor    = .black
     @Published var strokeWidth:      Double      = 2.0
-    static let defaultCanvasSize = CGSize(width: 32_000, height: 32_000)
+    static let defaultCanvasSize = CGSize(width: 16_000, height: 16_000)
 
     @Published var canvasSize:       CGSize      = CADDocument.defaultCanvasSize
     @Published var showGrid:         Bool        = true
@@ -222,6 +222,29 @@ class CADDocument: ObservableObject {
         recordAction("Arrière-plan")
     }
 
+    @discardableResult
+    func moveShapeInDisplayOrder(id sourceID: UUID,
+                                 relativeTo targetID: UUID,
+                                 insertAfterTarget: Bool) -> Bool {
+        guard sourceID != targetID else { return false }
+
+        let currentDisplayIDs = shapes.reversed().map(\.id)
+        guard currentDisplayIDs.contains(sourceID) else { return false }
+
+        var reorderedDisplayIDs = currentDisplayIDs.filter { $0 != sourceID }
+        guard let targetIndex = reorderedDisplayIDs.firstIndex(of: targetID) else { return false }
+
+        let insertionIndex = targetIndex + (insertAfterTarget ? 1 : 0)
+        reorderedDisplayIDs.insert(sourceID, at: insertionIndex)
+
+        guard reorderedDisplayIDs != currentDisplayIDs else { return false }
+
+        let shapesByID = Dictionary(uniqueKeysWithValues: shapes.map { ($0.id, $0) })
+        shapes = reorderedDisplayIDs.reversed().compactMap { shapesByID[$0] }
+        recordAction("Réorganisation formes")
+        return true
+    }
+
     // MARK: - Apply style to selection
 
     func applyFillToSelection() {
@@ -351,14 +374,6 @@ class CADDocument: ObservableObject {
             bounds = bounds.union(shape.visualBounds.standardized)
         }
         return bounds
-    }
-
-    func moveShapesReversed(from source: IndexSet, to destination: Int) {
-        let n = shapes.count
-        let originalSource = IndexSet(source.map { n - 1 - $0 })
-        let originalDest   = max(0, min(n, n - destination))
-        shapes.move(fromOffsets: originalSource, toOffset: originalDest)
-        recordAction("Réorganisation calques")
     }
 
     private func writeToURL(_ url: URL) {

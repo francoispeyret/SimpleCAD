@@ -56,6 +56,9 @@ final class CADCanvasView: NSView {
     private let dimExtend:   CGFloat = 6   // extension line overshoot
     private let rotationHandleSize: CGFloat = 18
     private let rotationHandleOffset: CGFloat = 34
+    private let rulerThickness: CGFloat = 38
+    private let rulerMajorTargetSpacing: CGFloat = 132
+    private let rulerMinorDivisions: CGFloat = 5
 
     // Facteur inverse du zoom : maintient les éléments graphiques à taille constante à l'écran.
     private var invZoom: CGFloat { CGFloat(1.0 / max(document.zoomLevel, 0.01)) }
@@ -83,6 +86,26 @@ final class CADCanvasView: NSView {
     private var labelBackgroundColor: NSColor {
         isDarkAppearance ? NSColor(calibratedWhite: 0.12, alpha: 0.88)
                          : NSColor.white.withAlphaComponent(0.85)
+    }
+
+    private var rulerBackgroundColor: NSColor {
+        isDarkAppearance ? NSColor(calibratedWhite: 0.105, alpha: 0.98)
+                         : NSColor(calibratedWhite: 0.965, alpha: 0.98)
+    }
+
+    private var rulerBorderColor: NSColor {
+        isDarkAppearance ? NSColor(calibratedWhite: 0.24, alpha: 1)
+                         : NSColor(calibratedWhite: 0.78, alpha: 1)
+    }
+
+    private var rulerTickColor: NSColor {
+        isDarkAppearance ? NSColor(calibratedWhite: 0.72, alpha: 1)
+                         : NSColor(calibratedWhite: 0.30, alpha: 1)
+    }
+
+    private var rulerLabelColor: NSColor {
+        isDarkAppearance ? NSColor(calibratedWhite: 0.92, alpha: 1)
+                         : NSColor(calibratedWhite: 0.18, alpha: 1)
     }
 
     private var isDarkAppearance: Bool {
@@ -156,6 +179,8 @@ final class CADCanvasView: NSView {
             drawHandles(shape, ctx: ctx)
             drawRotationHandle(shape, ctx: ctx)
         }
+
+        drawRulers(ctx: ctx)
     }
 
     // MARK: - Grid
@@ -375,6 +400,160 @@ final class CADCanvasView: NSView {
         graphicsContext.restoreGraphicsState()
     }
 
+    // MARK: - Rulers
+
+    private func drawRulers(ctx: CGContext) {
+        let visible = enclosingScrollView?.contentView.documentVisibleRect ?? bounds
+        guard visible.width > 0, visible.height > 0 else { return }
+
+        ctx.saveGState()
+        ctx.setShouldAntialias(true)
+
+        let z = invZoom
+        let thickness = rulerThickness * z
+        let horizontalRect = CGRect(x: visible.minX, y: visible.minY,
+                                    width: visible.width, height: thickness)
+        let verticalRect = CGRect(x: visible.minX, y: visible.minY,
+                                  width: thickness, height: visible.height)
+        let cornerRect = CGRect(x: visible.minX, y: visible.minY,
+                                width: thickness, height: thickness)
+
+        rulerBackgroundColor.setFill()
+        NSBezierPath(rect: horizontalRect).fill()
+        NSBezierPath(rect: verticalRect).fill()
+        NSBezierPath(rect: cornerRect).fill()
+
+        rulerBorderColor.setStroke()
+        ctx.setLineWidth(1 * z)
+        strokeLine(ctx,
+                   CGPoint(x: horizontalRect.minX, y: horizontalRect.maxY),
+                   CGPoint(x: horizontalRect.maxX, y: horizontalRect.maxY))
+        strokeLine(ctx,
+                   CGPoint(x: verticalRect.maxX, y: verticalRect.minY),
+                   CGPoint(x: verticalRect.maxX, y: verticalRect.maxY))
+
+        drawHorizontalRulerTicks(in: horizontalRect, visible: visible)
+        drawVerticalRulerTicks(in: verticalRect, visible: visible)
+
+        ctx.restoreGState()
+    }
+
+    private func drawHorizontalRulerTicks(in rect: CGRect, visible: CGRect) {
+        let z = invZoom
+        let majorStep = rulerMajorStepPixels()
+        let minorStep = max(majorStep / rulerMinorDivisions, 1)
+        var value = floor(visible.minX / minorStep) * minorStep
+
+        while value <= visible.maxX + minorStep {
+            let majorRatio = value / majorStep
+            let midRatio = value / (majorStep / 2)
+            let isMajor = abs(majorRatio.rounded() - majorRatio) < 0.001
+            let isMid = !isMajor && abs(midRatio.rounded() - midRatio) < 0.001
+            let tickLength = (isMajor ? 16 : (isMid ? 10 : 5)) * z
+            let baseline = rect.maxY
+
+            rulerTickColor.setStroke()
+            let tick = NSBezierPath()
+            tick.move(to: CGPoint(x: value, y: baseline))
+            tick.line(to: CGPoint(x: value, y: baseline - tickLength))
+            tick.lineWidth = isMajor ? 1.4 * z : 0.8 * z
+            tick.stroke()
+
+            if isMajor {
+                drawRulerLabel(document.unit.formatValue(Double(value)),
+                               at: CGPoint(x: value + 6 * z, y: rect.minY + 7 * z),
+                               vertical: false)
+            }
+
+            value += minorStep
+        }
+    }
+
+    private func drawVerticalRulerTicks(in rect: CGRect, visible: CGRect) {
+        let z = invZoom
+        let majorStep = rulerMajorStepPixels()
+        let minorStep = max(majorStep / rulerMinorDivisions, 1)
+        var value = floor(visible.minY / minorStep) * minorStep
+
+        while value <= visible.maxY + minorStep {
+            let majorRatio = value / majorStep
+            let midRatio = value / (majorStep / 2)
+            let isMajor = abs(majorRatio.rounded() - majorRatio) < 0.001
+            let isMid = !isMajor && abs(midRatio.rounded() - midRatio) < 0.001
+            let tickLength = (isMajor ? 16 : (isMid ? 10 : 5)) * z
+            let baseline = rect.maxX
+
+            rulerTickColor.setStroke()
+            let tick = NSBezierPath()
+            tick.move(to: CGPoint(x: baseline, y: value))
+            tick.line(to: CGPoint(x: baseline - tickLength, y: value))
+            tick.lineWidth = isMajor ? 1.4 * z : 0.8 * z
+            tick.stroke()
+
+            if isMajor {
+                drawRulerLabel(document.unit.formatValue(Double(value)),
+                               at: CGPoint(x: rect.minX + 18 * z, y: value + 6 * z),
+                               vertical: true)
+            }
+
+            value += minorStep
+        }
+    }
+
+    private func rulerMajorStepPixels() -> CGFloat {
+        let targetDocumentPixels = max(rulerMajorTargetSpacing * invZoom, 1)
+        let targetUnits = max(document.unit.fromPixels(Double(targetDocumentPixels)), 0.000001)
+        return CGFloat(document.unit.toPixels(niceRulerStep(targetUnits)))
+    }
+
+    private func niceRulerStep(_ value: Double) -> Double {
+        let exponent = floor(log10(value))
+        let base = pow(10, exponent)
+        let fraction = value / base
+
+        if fraction <= 1 { return base }
+        if fraction <= 2 { return 2 * base }
+        if fraction <= 5 { return 5 * base }
+        return 10 * base
+    }
+
+    private func drawRulerLabel(_ text: String, at point: CGPoint, vertical: Bool) {
+        let z = invZoom
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 12 * z, weight: .medium),
+            .foregroundColor: rulerLabelColor
+        ]
+        let string = NSAttributedString(string: text, attributes: attrs)
+        let size = string.size()
+
+        if vertical {
+            NSGraphicsContext.current?.saveGraphicsState()
+            let transform = NSAffineTransform()
+            transform.translateX(by: point.x, yBy: point.y + size.width / 2)
+            transform.rotate(byDegrees: -90)
+            transform.concat()
+            string.draw(at: CGPoint(x: -size.width / 2, y: -size.height / 2))
+            NSGraphicsContext.current?.restoreGraphicsState()
+        } else {
+            string.draw(at: point)
+        }
+    }
+
+    private func rulerRects() -> (horizontal: CGRect, vertical: CGRect)? {
+        let visible = enclosingScrollView?.contentView.documentVisibleRect ?? bounds
+        guard visible.width > 0, visible.height > 0 else { return nil }
+        let thickness = rulerThickness * invZoom
+        return (
+            CGRect(x: visible.minX, y: visible.minY, width: visible.width, height: thickness),
+            CGRect(x: visible.minX, y: visible.minY, width: thickness, height: visible.height)
+        )
+    }
+
+    private func pointIsInRuler(_ point: CGPoint) -> Bool {
+        guard let rects = rulerRects() else { return false }
+        return rects.horizontal.contains(point) || rects.vertical.contains(point)
+    }
+
     // MARK: - Drawing helpers
 
     private func strokeLine(_ ctx: CGContext, _ a: CGPoint, _ b: CGPoint) {
@@ -579,6 +758,7 @@ final class CADCanvasView: NSView {
         }
 
         let pt = convert(event.locationInWindow, from: nil)
+        if pointIsInRuler(pt) { return }
 
         // ── Rotation handle hit test ────────────────────────────────
         for shape in document.shapes.reversed() where document.selectedIDs.contains(shape.id) {

@@ -124,7 +124,7 @@ CADDocument (ObservableObject)
 
 | Sujet | Détail |
 |-------|--------|
-| Canevas | 32 000 × 32 000 px, coordonnées Y vers le bas (flipped NSView, cohérent avec SVG) |
+| Canevas | 16 000 × 16 000 px, coordonnées Y vers le bas (flipped NSView, cohérent avec SVG) |
 | Zoom | Délégué à `NSScrollView.magnification` (0.05 – 16×) ; synchronisé bi-directionnel avec `document.zoomLevel` |
 | Historique | Tableau de snapshots `[CADShape]` limité à 51 entrées (état initial + 50 opérations) |
 | Pan | Surveillance globale de la touche Espace via `NSEvent.addLocalMonitorForEvents` sans consommer les événements clavier des champs de texte |
